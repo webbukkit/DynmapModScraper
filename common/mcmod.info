@@ -1,0 +1,22 @@
+[
+{
+  "modid": "DynmapModScraper",
+  "name": "DynmapModScraper",
+  "description": "Dev tool for helping extract mod information for Dynamp",
+  "version": "@VERSION@",
+  "mcversion": "1.6.2",
+  "url": "http://www.minecraftforum.net/topic/1543523-dynmap-dynmap-web-maps-for-minecraft/",
+  "updateUrl": "",
+  "authors": [
+    "mikeprimm"
+  ],
+  "credits": "Authored by mikeprimm",
+  "logoFile": "",
+  "screenshots": [ ],
+  "parent":"",
+
+  "dependencies": [
+     "mod_MinecraftForge"
+  ]
+}
+]

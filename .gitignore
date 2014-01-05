@@ -3,5 +3,6 @@
 /lib
 /download
 /temp
-Dynmap-*.jar
+/target
+DynmapModScraper-*.jar
 .classpath

@@ -1,65 +1,26 @@
 package org.dynmap.modscraper;
 
-import cpw.mods.fml.client.registry.RenderingRegistry;
-import cpw.mods.fml.common.FMLCommonHandler;
 import cpw.mods.fml.common.Mod;
 import cpw.mods.fml.common.Mod.EventHandler;
 import cpw.mods.fml.common.Mod.Instance;
 import cpw.mods.fml.common.SidedProxy;
-import cpw.mods.fml.common.event.FMLInitializationEvent;
-import cpw.mods.fml.common.event.FMLPostInitializationEvent;
 import cpw.mods.fml.common.event.FMLPreInitializationEvent;
-import cpw.mods.fml.common.event.FMLServerStartedEvent;
 import cpw.mods.fml.common.event.FMLServerStartingEvent; 
-import cpw.mods.fml.common.event.FMLServerStoppingEvent;
 import cpw.mods.fml.common.network.NetworkMod;
-import cpw.mods.fml.common.registry.BlockProxy;
-import cpw.mods.fml.common.registry.EntityRegistry;
 import cpw.mods.fml.common.registry.GameRegistry;
 import cpw.mods.fml.common.registry.GameRegistry.UniqueIdentifier;
-import net.minecraftforge.client.event.sound.SoundLoadEvent;
 import net.minecraftforge.common.Configuration;
-import net.minecraftforge.common.MinecraftForge;
-import net.minecraftforge.event.ForgeSubscribe;
 import net.minecraft.block.Block;
-import net.minecraft.block.BlockAnvil;
-import net.minecraft.block.BlockBeacon;
-import net.minecraft.block.BlockBrewingStand;
-import net.minecraft.block.BlockCauldron;
-import net.minecraft.block.BlockCocoa;
-import net.minecraft.block.BlockComparator;
-import net.minecraft.block.BlockDoor;
-import net.minecraft.block.BlockDragonEgg;
-import net.minecraft.block.BlockEndPortalFrame;
-import net.minecraft.block.BlockFence;
-import net.minecraft.block.BlockFenceGate;
-import net.minecraft.block.BlockFire;
-import net.minecraft.block.BlockFlowerPot;
 import net.minecraft.block.BlockHalfSlab;
-import net.minecraft.block.BlockHopper;
-import net.minecraft.block.BlockLeaves;
 import net.minecraft.block.BlockLeavesBase;
-import net.minecraft.block.BlockPane;
-import net.minecraft.block.BlockPressurePlate;
-import net.minecraft.block.BlockPressurePlateWeighted;
 import net.minecraft.block.BlockRailBase;
-import net.minecraft.block.BlockRedstoneLogic;
-import net.minecraft.block.BlockRedstoneRepeater;
-import net.minecraft.block.BlockStairs;
-import net.minecraft.block.BlockStep;
-import net.minecraft.block.BlockWall;
-import net.minecraft.block.EnumMobType;
-import net.minecraft.block.material.Material;
 import net.minecraft.crash.CrashReport;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemMultiTextureTile;
 import net.minecraft.util.Icon;
 import net.minecraft.util.ReportedException;
 
+import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -160,6 +121,7 @@ public class DynmapModScraper
         boolean stdrot = true;
         String[] sides = null;
         String[] patches = null;
+        String comment = null;
         
         TextureRecord(int id, int meta, Block b) {
             this.id = id;
@@ -236,12 +198,17 @@ public class DynmapModScraper
             }
             return s;
         }
+        public void setComment(String c) {
+            comment = c;
+        }
     }
     
     public static class ModelRecord {
         String line = null;
         int id;
         int meta;
+        String comment = null;
+        
         ModelRecord(int id, int meta, Block b) {
             this.id = id;
             this.meta = meta;   
@@ -254,6 +221,10 @@ public class DynmapModScraper
                 }
             }
         }
+        public void setComment(String c) {
+            comment = c;
+        }
+
     }
     
     public static class StringRun {
@@ -307,6 +278,18 @@ public class DynmapModScraper
             cfg.save();
         }
     }
+    private static final String ILLEGAL_CHARACTERS = "/\n\r\t\0\f`?*\\<>|\":";
+    
+    private String fixFileName(String modname) {
+        String s = "";
+        for (int i = 0; i < modname.length(); i++) {
+            char c = modname.charAt(i);
+            if (ILLEGAL_CHARACTERS.indexOf(c) < 0) {
+                s += c;
+            }
+        }
+        return s;
+    }
 
     @EventHandler
     public void serverStarted(FMLServerStartingEvent event)
@@ -322,9 +305,12 @@ public class DynmapModScraper
         HashMap<String, ArrayList<TextureRecord>> txtRecsByMod = new HashMap<String, ArrayList<TextureRecord>>();
         HashMap<String, ArrayList<ModelRecord>> modRecsByMod = new HashMap<String, ArrayList<ModelRecord>>();
         HashMap<Integer, String> blkComments = new HashMap<Integer, String>();
+        File datadir = new File("DynmapModScraper");
+        datadir.mkdirs();
+        
         FileWriter fw = null;
         try {
-            fw = new FileWriter("DynmapModScraper.txt");
+            fw = new FileWriter(new File(datadir, "DynmapModScraper.txt"));
             for (int id = 0; id < 4096; id++) {
                 Block b = Block.blocksList[id];
                 if (b == null) continue;
@@ -347,9 +333,16 @@ public class DynmapModScraper
                 double z1  = b.getBlockBoundsMaxZ();
                 
                 boolean isFull = true;
+                boolean badBox = false;
                 if ((x0 != 0.0) || (y0 != 0.0) || (z0 != 0.0) || (x1 != 1.0) || (y1 != 1.0) || (z1 != 1.0)) {
                     blockline += String.format("  bounds=%f.%f,%f:%f,%f,%f\n", x0, y0, z0, x1, y1, z1);
                     isFull = false;
+                    if (x0 < 0.0) { badBox = true; x0 = 0.0; }
+                    if (y0 < 0.0) { badBox = true; y0 = 0.0; }
+                    if (z0 < 0.0) { badBox = true; z0 = 0.0; }
+                    if (x1 > 1.0) { badBox = true; x1 = 1.0; }
+                    if (y1 > 1.0) { badBox = true; y1 = 1.0; }
+                    if (z1 > 1.0) { badBox = true; z1 = 1.0; }
                 }
 
                 for (int meta = 0; meta < 16; meta++) {
@@ -378,7 +371,7 @@ public class DynmapModScraper
                                 txt = split[1];
                                 if (recmod == null) recmod = mod;
                             }
-                            textures.put(mod + "/" + txt, "assets/" + mod + "/textures/blocks/" + txt + ".png");
+                            textures.put(mod + "/" + txt, "assets/" + mod.toLowerCase() + "/textures/blocks/" + txt + ".png");
                             sides[side] = mod + "/" + txt;
                         }
                     }
@@ -410,6 +403,9 @@ public class DynmapModScraper
                                     else {
                                         if (!isFull) {
                                             trec.setTransparency(Transparency.TRANSPARENT);
+                                            if (badBox) {
+                                                mrec.setComment("FIXME: Box constraints truncated to 0.0<=val<=1.0");
+                                            }
                                             mrec.setLine("boxblock", "xmin=" + x0, "xmax=" + x1, "ymin=" + y0, "ymax=" + y1, "zmin=" + z0, "zmax=" + z1);
                                         }
                                         else {  // Else, full block
@@ -571,7 +567,73 @@ public class DynmapModScraper
                                 trec.addPatch(0, 0, sides[0]);
                                 txtref.add(sides[0]);
                                 break;
+                            case PANE:
+                                trec.setTransparency(Transparency.TRANSPARENT);
+                                // Model record for rail patches
+                                mrec = new ModelRecord(id, meta, b);
+                                mrec.setLine("customblock", "class=org.dynmap.hdmap.renderer.PaneRenderer");
+                                trec.addPatch(0, 0, sides[0]);
+                                trec.addPatch(1, 0, sides[1]);
+                                txtref.add(sides[0]);
+                                txtref.add(sides[1]);
+                                break;
+                            case DOOR:
+                                trec.setTransparency(Transparency.TRANSPARENT);
+                                // Model record for rail patches
+                                mrec = new ModelRecord(id, meta, b);
+                                mrec.setLine("customblock", "class=org.dynmap.hdmap.renderer.DoorRenderer");
+                                trec.addPatch(0, 0, sides[0]);
+                                trec.addPatch(1, 0, sides[1]);
+                                txtref.add(sides[0]);
+                                txtref.add(sides[1]);
+                                trec.setComment("FIXME: Top texture (patch0) not properly detected: needs to be manually fixed");
+                                break;
+                            case TORCH:
+                                trec.setTransparency(Transparency.TRANSPARENT); // Assume transparent
+                                // Model record for torch patches
+                                mrec = new ModelRecord(id, meta, b);
+                                switch (meta) {
+                                    case 0:
+                                    case 5:
+                                    default:
+                                        mrec.setLine("patchblock", "patch0=VertX04375#0","patch1=VertX04375@90#0","patch2=VertX04375@180#0","patch3=VertX04375@270#0","patch4=TorchTop#0");
+                                        break;
+                                    case 1:
+                                        mrec.setLine("patchblock", "patch0=TorchSide1#0","patch1=TorchSide2#0","patch2=TorchSide3#0","patch3=TorchSide4#0","patch4=TorchTopSlope@270#0");
+                                        break;
+                                    case 2:
+                                        mrec.setLine("patchblock", "patch0=TorchSide1@180#0","patch1=TorchSide2@180#0","patch2=TorchSide3@180#0","patch3=TorchSide4@180#0","patch4=TorchTopSlope@90#0");
+                                        break;
+                                    case 3:
+                                        mrec.setLine("patchblock", "patch0=TorchSide1@90#0","patch1=TorchSide2@90#0","patch2=TorchSide3@90#0","patch3=TorchSide4@90#0","patch4=TorchTopSlope#0");
+                                        break;
+                                    case 4:
+                                        mrec.setLine("patchblock", "patch0=TorchSide1@270#0","patch1=TorchSide2@270#0","patch2=TorchSide3@270#0","patch3=TorchSide4@270#0","patch4=TorchTopSlope@180#0");
+                                        break;
+                                }
+                                trec.addPatch(0, 0, sides[0]);
+                                txtref.add(sides[0]);
+                                break;
+                            case FENCE:
+                            case WALL:
+                                trec.setTransparency(Transparency.TRANSPARENT);
+                                // Model record for fence patches
+                                mrec = new ModelRecord(id, meta, b);
+                                if (rt == RendererType.WALL) {
+                                    mrec.setLine("customblock", "class=org.dynmap.hdmap.renderer.FenceWallBlockRenderer,type=fence","link0=107","type=wall");
+                                }
+                                else {
+                                    mrec.setLine("customblock", "class=org.dynmap.hdmap.renderer.FenceWallBlockRenderer,type=fence","link0=107");
+                                }
+                                trec.addPatch(0, 0, sides[0]);
+                                trec.addPatch(1, 0, sides[1]);
+                                trec.addPatch(2, 0, sides[2]);
+                                txtref.add(sides[0]);
+                                txtref.add(sides[1]);
+                                txtref.add(sides[2]);
+                                break;
                             default:    // Unhandled cases: need models but we don't know which yet
+                                trec.setTransparency(Transparency.TRANSPARENT); // Assume transparent
                                 /* Model record for cuboid */
                                 mrec = new ModelRecord(id, meta, b);
                                 addallsides = true; // And add all standard sides
@@ -623,9 +685,9 @@ public class DynmapModScraper
             FileWriter txt = null;
             FileWriter modf = null;
             try {
-                txt = new FileWriter(mod + "-texture.txt");
+                txt = new FileWriter(new File(datadir, fixFileName(mod) + "-texture.txt"));
                 txt.write("modname:" + mod + "\n");
-                txt.write("texturepath:assets/" + mod + "/textures/blocks/\n");
+                txt.write("texturepath:assets/" + mod.toLowerCase() + "/textures/blocks/\n");
                 // Write any texture references
                 HashSet<String> txtlist = texIDByMod.get(mod);
                 if (txtlist != null) {
@@ -657,6 +719,9 @@ public class DynmapModScraper
                             if (c != null) {
                                 txt.write("# " + c + "\n");
                             }
+                            if (trec.comment != null) {
+                                txt.write("# " + trec.comment + "\n");
+                            }
                             // And get line set for id
                             StringRunAccum lineaccum = linesets.get(trec.id);
                             if (lineaccum != null) {
@@ -681,14 +746,23 @@ public class DynmapModScraper
                 /* And write model file, if needed */
                 List<ModelRecord> mlist = modRecsByMod.get(mod);
                 if ((mlist != null) && (mlist.isEmpty() == false)) {
-                    modf = new FileWriter(mod + "-models.txt");
+                    modf = new FileWriter(new File(datadir, fixFileName(mod) + "-models.txt"));
                     modf.write("modname:" + mod + "\n");
                     // Stock patches
                     modf.write("patch:id=VertX1Z0ToX0Z1,Ox=1.0,Oy=0.0,Oz=0.0,Ux=0.0,Uy=0.0,Uz=1.0,Vx=1.0,Vy=1.0,Vz=0.0,visibility=flip\n");
+                    modf.write("patch:id=VertX025,Ox=0.25,Oy=0.0,Oz=1.0,Ux=0.25,Uy=0.0,Uz=0.0,Vx=0.25,Vy=1.0,Vz=1.0\n");
                     modf.write("patch:id=VertX075,Ox=0.75,Oy=0.0,Oz=1.0,Ux=0.75,Uy=0.0,Uz=0.0,Vx=0.75,Vy=1.0,Vz=1.0\n");
                     modf.write("patch:id=HorizY001ZTop,Ox=0.0,Oy=0.01,Oz=0.0,Ux=1.0,Uy=0.01,Uz=0.0,Vx=0.0,Vy=0.01,Vz=1.0\n");
                     modf.write("patch:id=SlopeXUpZTop,Ox=0.0,Oy=0.0,Oz=0.0,Ux=0.0,Uy=0.0,Uz=1.0,Vx=1.0,Vy=1.0,Vz=0.0\n");
                     modf.write("patch:id=VertX0In,Ox=0.0,Oy=0.0,Oz=1.0,Ux=0.0,Uy=0.0,Uz=0.0,Vx=0.0,Vy=1.0,Vz=1.0\n");
+                    modf.write("patch:id=VertX04375,Ox=0.4375,Oy=0.0,Oz=0.0,Ux=0.4375,Uy=0.0,Uz=1.0,Vx=0.4375,Vy=1.0,Vz=0.0,visibility=top\n");
+                    modf.write("patch:id=TorchSide1,Ox=-0.5,Oy=0.2,Oz=0.4375,Ux=0.5,Uy=0.2,Uz=0.4375,Vx=-0.1,Vy=1.2,Vz=0.4375,Vmax=0.8,visibility=bottom\n");
+                    modf.write("patch:id=TorchSide2,Ox=-0.5,Oy=0.2,Oz=0.5625,Ux=0.5,Uy=0.2,Uz=0.5625,Vx=-0.1,Vy=1.2,Vz=0.5625,Vmax=0.8,visibility=top\n");
+                    modf.write("patch:id=TorchSide3,Ox=0.0625,Oy=0.2,Oz=0.0,Ux=0.0625,Uy=0.2,Uz=1.0,Vx=0.4625,Vy=1.2,Vz=0.0,Vmax=0.8,visibility=bottom\n");
+                    modf.write("patch:id=TorchSide4,Ox=-0.0625,Oy=0.2,Oz=0.0,Ux=-0.0625,Uy=0.2,Uz=1.0,Vx=0.3375,Vy=1.2,Vz=0.0,Vmax=0.8,visibility=top\n");
+                    modf.write("patch:id=TorchTop,Ox=0.0,Oy=0.625,Oz=-0.0625,Ux=1.0,Uy=0.625,Uz=-0.0625,Vx=0.0,Vy=0.625,Vz=0.9375,Umin=0.4375,Umax=0.5625,Vmin=0.5,Vmax=0.625\n");
+                    modf.write("patch:id=TorchTopSlope,Ox=0.0,Oy=0.825,Oz=-0.3625,Ux=1.0,Uy=0.825,Uz=-0.3625,Vx=0.0,Vy=0.825,Vz=0.6375,Umin=0.4375,Umax=0.5625,Vmin=0.5,Vmax=0.625\n");
+
                     // Make traversal to build mergable strings for each block ID
                     HashMap<Integer, StringRunAccum> linesets = new HashMap<Integer, StringRunAccum>();
                     for (ModelRecord mrec : mlist) {
@@ -709,6 +783,9 @@ public class DynmapModScraper
                             String c = blkComments.get(mrec.id);
                             if (c != null) {
                                 modf.write("# " + c + "\n");
+                            }
+                            if (mrec.comment != null) {
+                                modf.write("# " + mrec.comment + "\n");
                             }
                             // And get line set for id
                             StringRunAccum lineaccum = linesets.get(mrec.id);

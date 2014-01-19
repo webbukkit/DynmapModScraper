@@ -1,6 +1,8 @@
 package org.dynmap.modscraper;
 
+import cpw.mods.fml.common.Loader;
 import cpw.mods.fml.common.Mod;
+import cpw.mods.fml.common.ModContainer;
 import cpw.mods.fml.common.Mod.EventHandler;
 import cpw.mods.fml.common.Mod.Instance;
 import cpw.mods.fml.common.SidedProxy;
@@ -9,7 +11,9 @@ import cpw.mods.fml.common.event.FMLServerStartingEvent;
 import cpw.mods.fml.common.network.NetworkMod;
 import cpw.mods.fml.common.registry.GameRegistry;
 import cpw.mods.fml.common.registry.GameRegistry.UniqueIdentifier;
+import net.minecraftforge.common.ConfigCategory;
 import net.minecraftforge.common.Configuration;
+import net.minecraftforge.common.Property;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockHalfSlab;
 import net.minecraft.block.BlockLeavesBase;
@@ -23,11 +27,13 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.logging.Logger;
-
 
 @Mod(modid = "DynmapModScraper", name = "", version = Version.VER)
 @NetworkMod(clientSideRequired = true, serverSideRequired = false)
@@ -45,6 +51,11 @@ public class DynmapModScraper
 
     public boolean good_init = false;
     
+    private static HashMap<String, String> cfgfileByMod = new HashMap<String, String>();
+    private static HashMap<String, String[]> sectionsByMod = new HashMap<String, String[]>();
+    private static HashMap<String, String> prefixByMod = new HashMap<String, String>();
+    private static HashMap<String, String> suffixByMod = new HashMap<String, String>();
+
     public static void crash(Exception x, String msg) {
         CrashReport crashreport = CrashReport.makeCrashReport(x, msg);
         throw new ReportedException(crashreport);
@@ -204,27 +215,32 @@ public class DynmapModScraper
     }
     
     public static class ModelRecord {
-        String line = null;
+        String partialline = null;
         int id;
         int meta;
         String comment = null;
+        String type;
         
         ModelRecord(int id, int meta, Block b) {
             this.id = id;
             this.meta = meta;   
         }
         public void setLine(String type, String... args) {
-            line = type + ":id=" + id;  // We do meta last
+            this.type = type;
+            this.partialline = "";
             for (String arg : args) {
                 if (arg != null) {
-                    line += "," + arg;
+                    partialline += "," + arg;
                 }
             }
         }
         public void setComment(String c) {
             comment = c;
         }
-
+        public String getLine(Map<Integer,String> aliases) {
+            String idstr = getBlockID(id, aliases);
+            return type + ":id=" + idstr + partialline;  // We do meta last
+        }
     }
     
     public static class StringRun {
@@ -266,8 +282,32 @@ public class DynmapModScraper
         try
         {
             cfg.load();
-            
             good_init = true;
+            Set<String> mods = Loader.instance().getIndexedModList().keySet();
+            for (String mod : mods) {
+                String cfgfile = "config/" + mod + ".cfg";
+                File f = new File(cfgfile);
+                if (f.exists() == false) {
+                    cfgfile = "";
+                }
+                cfgfile = cfg.get("ConfigFiles", mod, cfgfile).getString();
+                if ((cfgfile != null) && (cfgfile.length() > 0)) {
+                    cfgfileByMod.put(mod, cfgfile);
+                }
+                String sections[] = { Configuration.CATEGORY_BLOCK };
+                sections = cfg.get("BlockSections", mod, sections).getStringList();
+                sectionsByMod.put(mod, sections);
+                
+                String prefix = cfg.get("IDPrefix", mod, "").getString();
+                if (prefix.length() > 0) {
+                    prefixByMod.put(mod, prefix);
+                }
+                String suffix = cfg.get("IDSuffix", mod, "").getString();
+                if (suffix.length() > 0) {
+                    suffixByMod.put(mod, suffix);
+                }
+                
+            }
         }
         catch (Exception e)
         {
@@ -288,6 +328,76 @@ public class DynmapModScraper
                 s += c;
             }
         }
+        return s;
+    }
+    
+    private File getModConfigFile(String mod) {
+        String file = cfgfileByMod.get(mod);
+        if (file == null) {
+            return null;
+        }
+        File f = new File(file);
+        if (f.exists() == false) {
+            return null;
+        }
+        return f;
+    }
+    
+    private Map<Integer, String> getBlockIDMappingForMod(String mod) {
+        File f = getModConfigFile(mod);
+        if (f == null) {
+            return Collections.emptyMap();
+        }
+        Configuration cfg;
+        try {
+            cfg = new Configuration(f);
+            cfg.load(); // Load it
+        } catch (RuntimeException x) {
+            return Collections.emptyMap();
+        }
+        String prefix = prefixByMod.get(mod);
+        String suffix = suffixByMod.get(mod);
+        HashMap<Integer, String> rslt = new HashMap<Integer, String>();
+        String[] sections = sectionsByMod.get(mod);
+        if (sections == null) {
+            return Collections.emptyMap();
+        }
+        for (String section : sections) {
+            ConfigCategory blocks = cfg.getCategory(section);
+            if ((blocks == null) || blocks.isEmpty()) {
+                continue;
+            }
+            for (String k : blocks.keySet()) {
+                if ((prefix != null) && (!k.startsWith(prefix))) {
+                    continue;
+                }
+                if ((suffix != null) && (!k.endsWith(suffix))) {
+                    continue;
+                }
+                Property p = blocks.get(k);
+                if ((p != null) && p.isIntValue()) {
+                    int v = p.getInt();
+                    if ((v >= 1) && (v < 4096)) {
+                        if (section.equals("block") || section.equals("blocks")) {
+                        }
+                        else if (section.equals("item")) {
+                            k = "item_" + k;
+                        }
+                        else {
+                            k = section + "/" + k;
+                        }
+                        rslt.put(v, k);
+                    }
+                }
+            }
+        }
+        return rslt;
+    }
+    
+    private static String getBlockID(int id, Map<Integer, String> idmap) {
+        String s = idmap.get(id);
+        if (s == null)
+            s = Integer.toString(id);
         return s;
     }
 
@@ -651,7 +761,7 @@ public class DynmapModScraper
                         if (blockline != null) {
                             fw.write(blockline);
                             blockline = null;
-                            blkComments.put(id, id + ":* (" + bname + "), render=" + rid + "(" + rt + "), opaque=" + b.isOpaqueCube() + ",cls=" + b.getClass().getName());
+                            blkComments.put(id, ":* (" + bname + "), render=" + rid + "(" + rt + "), opaque=" + b.isOpaqueCube() + ",cls=" + b.getClass().getName());
                         }
                         fw.write(line + "\n");
                         
@@ -684,9 +794,23 @@ public class DynmapModScraper
         for (String mod : mods) {
             FileWriter txt = null;
             FileWriter modf = null;
+            File cfgfile = getModConfigFile(mod);
+            Map<Integer, String> aliases = getBlockIDMappingForMod(mod);
+            String modver = "";
+            ModContainer modc = Loader.instance().getIndexedModList().get(mod);
+            if (modc != null) {
+                modver = modc.getVersion();
+            }
             try {
                 txt = new FileWriter(new File(datadir, fixFileName(mod) + "-texture.txt"));
+                txt.write("# " + mod + " " + modver + "\n");
                 txt.write("modname:" + mod + "\n");
+                if (cfgfile != null) {
+                    txt.write("cfgfile:" + cfgfile.getPath() + "\n");
+                }
+                else {
+                    txt.write("# Configuration file not found!\n");
+                }
                 txt.write("texturepath:assets/" + mod.toLowerCase() + "/textures/blocks/\n");
                 // Write any texture references
                 HashSet<String> txtlist = texIDByMod.get(mod);
@@ -715,9 +839,10 @@ public class DynmapModScraper
                     for (TextureRecord trec : tlist) {
                         if (trec.id != lastid) {
                             lastid = trec.id;
+                            String idstr = getBlockID(trec.id, aliases);
                             String c = blkComments.get(trec.id);
                             if (c != null) {
-                                txt.write("# " + c + "\n");
+                                txt.write("# " + idstr + c + "\n");
                             }
                             if (trec.comment != null) {
                                 txt.write("# " + trec.comment + "\n");
@@ -726,7 +851,7 @@ public class DynmapModScraper
                             StringRunAccum lineaccum = linesets.get(trec.id);
                             if (lineaccum != null) {
                                 for (StringRun sr : lineaccum.lst) {
-                                    txt.write("block:id=" + trec.id);
+                                    txt.write("block:id=" + idstr);
                                     if ((sr.start == 0) && (sr.count == 16)) {  // Is * special case
                                         txt.write(",data=*");
                                     }
@@ -747,7 +872,14 @@ public class DynmapModScraper
                 List<ModelRecord> mlist = modRecsByMod.get(mod);
                 if ((mlist != null) && (mlist.isEmpty() == false)) {
                     modf = new FileWriter(new File(datadir, fixFileName(mod) + "-models.txt"));
+                    modf.write("# " + mod + " " + modver + "\n");
                     modf.write("modname:" + mod + "\n");
+                    if (cfgfile != null) {
+                        modf.write("cfgfile:" + cfgfile.getPath() + "\n");
+                    }
+                    else {
+                        modf.write("# Configuration file not found!\n");
+                    }
                     // Stock patches
                     modf.write("patch:id=VertX1Z0ToX0Z1,Ox=1.0,Oy=0.0,Oz=0.0,Ux=0.0,Uy=0.0,Uz=1.0,Vx=1.0,Vy=1.0,Vz=0.0,visibility=flip\n");
                     modf.write("patch:id=VertX025,Ox=0.25,Oy=0.0,Oz=1.0,Ux=0.25,Uy=0.0,Uz=0.0,Vx=0.25,Vy=1.0,Vz=1.0\n");
@@ -771,18 +903,19 @@ public class DynmapModScraper
                             lineaccum = new StringRunAccum();
                             linesets.put(mrec.id, lineaccum);
                         }
-                        // Build line for this texture record
-                        if (mrec.line != null) {
-                            lineaccum.addString(mrec.meta, mrec.line);
+                        // Build line for this model record
+                        if (mrec.partialline != null) {
+                            lineaccum.addString(mrec.meta, mrec.getLine(aliases));
                         }
                     }
                     int lastid = -1;
                     for (ModelRecord mrec : mlist) {
                         if (mrec.id != lastid) {
+                            String idstr = getBlockID(mrec.id, aliases);
                             lastid = mrec.id;
                             String c = blkComments.get(mrec.id);
                             if (c != null) {
-                                modf.write("# " + c + "\n");
+                                modf.write("# " + idstr + c + "\n");
                             }
                             if (mrec.comment != null) {
                                 modf.write("# " + mrec.comment + "\n");

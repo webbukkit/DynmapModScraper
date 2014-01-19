@@ -6,3 +6,5 @@
 /target
 DynmapModScraper-*.jar
 .classpath
+/.settings
+.project

@@ -620,7 +620,7 @@ public class DynmapModScraper
                                     else {  // Else, full block
                                         mrec = null;
                                         //- assume transparent texture behavior if not render pass 0
-                                        if ((b.getRenderBlockPass() > 0) && (cmult != 0)) {
+                                        if ((b.getRenderBlockPass() > 0) && (cmult == 0)) {
                                             sideidx = new int[] { 12000, 12000, 12000, 12000, 12000, 12000 };
                                         }
                                     }
@@ -630,7 +630,7 @@ public class DynmapModScraper
                                 if (b instanceof BlockLeavesBase) {
                                 }
                                 //- assume transparent texture behavior if not render pass 0
-                                else if ((b.getRenderBlockPass() > 0) && (cmult != 0)) {
+                                else if ((b.getRenderBlockPass() > 0) && (cmult == 0)) {
                                     sideidx = new int[] { 12000, 12000, 12000, 12000, 12000, 12000 };
                                 }
                             }

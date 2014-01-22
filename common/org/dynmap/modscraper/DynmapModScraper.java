@@ -23,6 +23,7 @@ import net.minecraft.util.Icon;
 import net.minecraft.util.ReportedException;
 import net.minecraft.world.ColorizerFoliage;
 import net.minecraft.world.ColorizerGrass;
+import net.minecraft.world.biome.BiomeGenBase;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -36,6 +37,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.logging.Logger;
 
 @Mod(modid = "DynmapModScraper", name = "", version = Version.VER)
@@ -59,6 +61,7 @@ public class DynmapModScraper
     private static HashMap<String, String[]> sectionsByMod = new HashMap<String, String[]>();
     private static HashMap<String, String> prefixByMod = new HashMap<String, String>();
     private static HashMap<String, String> suffixByMod = new HashMap<String, String>();
+    private static HashMap<String, String> biomeSectionsByMod = new HashMap<String, String>();
     
     public static void crash(Exception x, String msg) {
         CrashReport crashreport = CrashReport.makeCrashReport(x, msg);
@@ -316,6 +319,10 @@ public class DynmapModScraper
                 if (suffix.length() > 0) {
                     suffixByMod.put(mod, suffix);
                 }
+                String biomes = cfg.get("BiomeSection", mod, "").getString();
+                if (biomes.length() > 0) {
+                    biomeSectionsByMod.put(mod, biomes);
+                }
                 
             }
         }
@@ -357,6 +364,7 @@ public class DynmapModScraper
         Map<Integer, String> map = new HashMap<Integer, String>();
         HashSet<String> used = new HashSet<String>();
         boolean missedID;
+        Map<Integer, String> biomemap = new HashMap<Integer, String>();
     }
 
     private void loadConfigAsProperties(File f, IDMapping idm) {
@@ -450,6 +458,31 @@ public class DynmapModScraper
                 }
             }
         }
+        String biomesect = biomeSectionsByMod.get(mod);
+        if (biomesect != null) {
+            ConfigCategory biomes = cfg.getCategory(biomesect);
+            biomesect = biomesect.replace('.', '/');
+            if (biomes != null) {
+                for (String k : biomes.keySet()) {
+                    Property p = biomes.get(k);
+                    if ((p != null) && p.isIntValue()) {
+                        int v = p.getInt();
+                        if ((v >= 1) && (v < 256)) {
+                            k = biomesect + '/' + k;
+                            if (k.startsWith("block/") || biomesect.startsWith("blocks/")) {
+                                k = k.substring(k.indexOf('/') + 1);
+                            }
+                            else if (k.startsWith("item/")) {
+                                k = "item_" + k.substring(5);
+                            }
+                            k = k.replace(' ', '_');
+                            idm.biomemap.put(v, k);
+                        }
+                    }
+                }
+            }
+            
+        }
         return idm;
     }
     
@@ -465,8 +498,6 @@ public class DynmapModScraper
         return s;
     }
 
-    private boolean savedGraphicsLevel;
-    
     private void prepBlock(Block b) {
     }
     
@@ -633,6 +664,47 @@ public class DynmapModScraper
                                 else if ((b.getRenderBlockPass() > 0) && (cmult == 0)) {
                                     sideidx = new int[] { 12000, 12000, 12000, 12000, 12000, 12000 };
                                 }
+                            }
+                            addallsides = true; // And add all standard sides
+                            break;
+                        case FLUIDS:
+                            trec.setTransparency(Transparency.SEMITRANSPARENT);
+                            sideidx = new int[] { 12000, 12000, 12000, 12000, 12000, 12000 };
+                            /* Model record for cuboid */
+                            mrec = new ModelRecord(id, meta, b);
+                            switch (meta) {
+                                case 0:
+                                case 8:
+                                    mrec = null;
+                                    break;
+                                case 1:
+                                case 9:
+                                    mrec.setLine("boxblock", "ymax=0.875");
+                                    break;
+                                case 2:
+                                case 10:
+                                    mrec.setLine("boxblock", "ymax=0.75");
+                                    break;
+                                case 3:
+                                case 11:
+                                    mrec.setLine("boxblock", "ymax=0.625");
+                                    break;
+                                case 4:
+                                case 12:
+                                    mrec.setLine("boxblock", "ymax=0.5");
+                                    break;
+                                case 5:
+                                case 13:
+                                    mrec.setLine("boxblock", "ymax=0.375");
+                                    break;
+                                case 6:
+                                case 14:
+                                    mrec.setLine("boxblock", "ymax=0.25");
+                                    break;
+                                case 7:
+                                case 15:
+                                    mrec.setLine("boxblock", "ymax=0.125");
+                                    break;
                             }
                             addallsides = true; // And add all standard sides
                             break;
@@ -892,6 +964,7 @@ public class DynmapModScraper
         HashSet<String> mods = new HashSet<String>();
         mods.addAll(txtRecsByMod.keySet());
         mods.addAll(modRecsByMod.keySet());
+        mods.remove("minecraft");
         for (String mod : mods) {
             log.info("Generating files for " + mod);
             FileWriter txt = null;
@@ -912,6 +985,19 @@ public class DynmapModScraper
                     for (String id : txtlist) {
                         String fname = textures.get(id);
                         txtlines.add("texture:id=" + id + ",filename=" + fname);
+                    }
+                }
+                txtlines.add("");
+                // Check for biome records, and add them
+                if (aliases.biomemap.isEmpty() == false) {
+                    TreeSet<Integer> keys = new TreeSet<Integer>(aliases.biomemap.keySet());
+                    for (Integer id : keys) {
+                        BiomeGenBase bio = BiomeGenBase.biomeList[id];
+                        String sym = aliases.biomemap.get(id);
+                        String line = String.format("biome:id=%s,grassColorMult=1%06X,foliageColorMult=1%06X,waterColorMult=%06X",
+                                sym, bio.getBiomeGrassColor() & 0xFFFFFF, bio.getBiomeFoliageColor() & 0xFFFFFF, bio.getWaterColorMultiplier() & 0xFFFFFF);
+                        txtlines.add("# " + sym);
+                        txtlines.add(line);
                     }
                 }
                 txtlines.add("");

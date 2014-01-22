@@ -46,6 +46,8 @@ public class DynmapModScraper
 {    
     public static Logger log = Logger.getLogger("DynmapModScraper");
     
+    public static final String MCVERSIONLIMIT = "1.6.0-";
+    
     // The instance of your mod that Forge uses.
     @Instance("DynmapModScraper")
     public static DynmapModScraper instance;
@@ -1050,6 +1052,7 @@ public class DynmapModScraper
                 }
                 txt = new FileWriter(new File(datadir, fixFileName(mod) + "-texture.txt"));
                 txt.write("# " + mod + " " + modver + "\n");
+                txt.write("version:" + MCVERSIONLIMIT + "\n");
                 txt.write("modname:" + mod + "\n\n");
                 if (aliases.used.isEmpty() == false) {
                     int cnt = 0;
@@ -1152,6 +1155,7 @@ public class DynmapModScraper
                     }
                     modf = new FileWriter(new File(datadir, fixFileName(mod) + "-models.txt"));
                     modf.write("# " + mod + " " + modver + "\n");
+                    modf.write("version:" + MCVERSIONLIMIT + "\n");
                     modf.write("modname:" + mod + "\n\n");
                     if (aliases.used.isEmpty() == false) {
                         int cnt = 0;

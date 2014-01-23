@@ -46,7 +46,7 @@ public class DynmapModScraper
 {    
     public static Logger log = Logger.getLogger("DynmapModScraper");
     
-    public static final String MCVERSIONLIMIT = "1.6.0-";
+    public static final String MCVERSIONLIMIT = "1.6-";
     
     // The instance of your mod that Forge uses.
     @Instance("DynmapModScraper")
@@ -1057,6 +1057,27 @@ public class DynmapModScraper
                 if (aliases.used.isEmpty() == false) {
                     int cnt = 0;
                     for (String s : aliases.used) {
+                        if (cnt == 0) {
+                            txt.write("var:");
+                        }
+                        else {
+                            txt.write(",");
+                        }
+                        txt.write(s + "=0");
+                        cnt++;
+                        if (cnt == 10) {
+                            txt.write("\n");
+                            cnt = 0;
+                        }
+                    }
+                    if (cnt > 0) {
+                        txt.write("\n");
+                    }
+                    txt.write("\n");
+                }
+                if (aliases.biomemap.isEmpty() == false) {
+                    int cnt = 0;
+                    for (String s : aliases.biomemap.values()) {
                         if (cnt == 0) {
                             txt.write("var:");
                         }

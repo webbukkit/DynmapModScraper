@@ -613,8 +613,7 @@ public class DynmapModScraper
                         sides[side] = mod + "/" + txt;
                     }
                 }
-                if (hit) {
-                    if (recmod == null) recmod = "minecraft";
+                if (hit && (recmod != null)) {
                     TextureRecord trec = new TextureRecord(id, meta, b);
                     ModelRecord mrec = null;
                     boolean addallsides = false;
@@ -739,6 +738,35 @@ public class DynmapModScraper
                             }
                             addallsides = true; // And add all standard sides
                             break;
+                        case QUARTZ:
+                            switch (meta) {    // Based on orientation
+                                case 3:
+                                    sideidx = new int[] { 4000, 4000, 0, 0, 6000, 6000 };
+                                    break;
+                                case 4:
+                                    sideidx = new int[] { 0, 0, 6000, 6000, 0, 0 };
+                                    break;
+                            }
+                            addallsides = true; // And add all standard sides
+                            break;
+                        case CACTUS:
+                            trec.setTransparency(Transparency.SEMITRANSPARENT);
+                            mrec = new ModelRecord(id, meta, b);
+                            mrec.setLine("patchblock", "patch0=VertX00625","patch1=VertX00625@90","patch2=VertX00625@180","patch3=VertX00625@270","patch4=HorizY100ZTop","patch5=HorizY100ZTop@180/0/0");
+                            // Add patches
+                            trec.addPatch(0, cmult, sides[2]);
+                            trec.addPatch(1, cmult, sides[4]);
+                            trec.addPatch(2, cmult, sides[3]);
+                            trec.addPatch(3, cmult, sides[5]);
+                            trec.addPatch(4, cmult, sides[1]);
+                            trec.addPatch(5, cmult, sides[0]);
+                            txtref.add(sides[2]);
+                            txtref.add(sides[4]);
+                            txtref.add(sides[3]);
+                            txtref.add(sides[5]);
+                            txtref.add(sides[1]);
+                            txtref.add(sides[0]);
+                            break;
                         case CROPS:
                             trec.setTransparency(Transparency.TRANSPARENT);
                             // Model record for crop patches
@@ -804,6 +832,28 @@ public class DynmapModScraper
                             trec.addPatch(0, cmult, sides[0]);
                             txtref.add(sides[0]);
                             break;
+                        case LADDER:
+                            trec.setTransparency(Transparency.TRANSPARENT);
+                            // Model record for rail patches
+                            mrec = new ModelRecord(id, meta, b);
+                            switch (meta) {
+                                case 2:
+                                    mrec.setLine("patchblock", "patch0=VertX0In@270");
+                                    break;
+                                case 3:
+                                    mrec.setLine("patchblock", "patch0=VertX0In@90");
+                                    break;
+                                case 4:
+                                    mrec.setLine("patchblock", "patch0=VertX0In@180");
+                                    break;
+                                case 5:
+                                    mrec.setLine("patchblock", "patch0=VertX0In");
+                                    break;
+                            }
+                            // Add first patch
+                            trec.addPatch(0, cmult, sides[0]);
+                            txtref.add(sides[0]);
+                            break;
                         case VINE:
                             trec.setTransparency(Transparency.TRANSPARENT);
                             // Model record for rail patches
@@ -854,7 +904,8 @@ public class DynmapModScraper
                                 case 15:
                                     mrec.setLine("patchblock", "patch0=VertX0In@270#0", "patch1=VertX0In@90#0", "patch2=VertX0In@180#0", "patch3=VertX0In#0");
                                     break;
-                            }                                // Add first patch
+                            }                               
+                            // Add first patch
                             trec.addPatch(0, cmult, sides[0]);
                             txtref.add(sides[0]);
                             break;
@@ -936,6 +987,8 @@ public class DynmapModScraper
                             txtref.add(sides[2]);
                             break;
                         default:    // Unhandled cases: need models but we don't know which yet
+                            log.warning("Using unsupported standard renderer in " + recmod + ": " + rt.toString());
+                        case CUSTOM:
                             trec.setTransparency(Transparency.TRANSPARENT); // Assume transparent
                             /* Model record for cuboid */
                             mrec = new ModelRecord(id, meta, b);
@@ -1142,6 +1195,8 @@ public class DynmapModScraper
                     modlines.add("patch:id=TorchSide4,Ox=-0.0625,Oy=0.2,Oz=0.0,Ux=-0.0625,Uy=0.2,Uz=1.0,Vx=0.3375,Vy=1.2,Vz=0.0,Vmax=0.8,visibility=top");
                     modlines.add("patch:id=TorchTop,Ox=0.0,Oy=0.625,Oz=-0.0625,Ux=1.0,Uy=0.625,Uz=-0.0625,Vx=0.0,Vy=0.625,Vz=0.9375,Umin=0.4375,Umax=0.5625,Vmin=0.5,Vmax=0.625");
                     modlines.add("patch:id=TorchTopSlope,Ox=0.0,Oy=0.825,Oz=-0.3625,Ux=1.0,Uy=0.825,Uz=-0.3625,Vx=0.0,Vy=0.825,Vz=0.6375,Umin=0.4375,Umax=0.5625,Vmin=0.5,Vmax=0.625");
+                    modlines.add("patch:id=VertX00625,Ox=0.0625,Oy=0.0,Oz=0.0,Ux=0.0625,Uy=0.0,Uz=1.0,Vx=0.0625,Vy=1.0,Vz=0.0,visibility=top");
+                    modlines.add("patch:id=HorizY100ZTop,Ox=0.0,Oy=1.0,Oz=0.0,Ux=1.0,Uy=1.0,Uz=0.0,Vx=0.0,Vy=1.0,Vz=1.0,visibility=bottom");
                     modlines.add("");
                     // Make traversal to build mergable strings for each block ID
                     HashMap<Integer, StringRunAccum> linesets = new HashMap<Integer, StringRunAccum>();

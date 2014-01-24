@@ -27,9 +27,11 @@ import net.minecraft.world.biome.BiomeGenBase;
 
 import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -290,8 +292,32 @@ public class DynmapModScraper
     @EventHandler
     public void preInit(FMLPreInitializationEvent event)
     {
+        File cfgf = event.getSuggestedConfigurationFile();
+        if (cfgf.exists() == false) {
+            InputStream is = this.getClass().getResourceAsStream("/DynmapMapScraper.cfg");
+            FileOutputStream fos = null;
+            if (is != null) {
+                try {
+                    fos = new FileOutputStream(cfgf);
+                    byte[] buf = new byte[2048];
+                    int len;
+                    while ((len = is.read(buf)) > 0) {
+                        fos.write(buf, 0, len);
+                    }
+                } catch (IOException iox) {
+                    log.info("Error initializing config file - " + cfgf.getPath());
+                } finally {
+                    if (is != null) {
+                        try { is.close(); } catch (IOException x) {}
+                    }
+                    if (fos != null) {
+                        try { fos.close(); } catch (IOException x) {}
+                    }
+                }
+            }
+        }
         // Load configuration file - use suggested (config/DynmapModScraper.cfg)
-        Configuration cfg = new Configuration(event.getSuggestedConfigurationFile());
+        Configuration cfg = new Configuration(cfgf);
         try
         {
             cfg.load();

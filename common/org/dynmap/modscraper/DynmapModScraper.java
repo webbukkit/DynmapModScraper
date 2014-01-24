@@ -294,7 +294,8 @@ public class DynmapModScraper
     {
         File cfgf = event.getSuggestedConfigurationFile();
         if (cfgf.exists() == false) {
-            InputStream is = this.getClass().getResourceAsStream("/DynmapMapScraper.cfg");
+            log.info("Initialize configuration file : " + cfgf.getPath());
+            InputStream is = this.getClass().getResourceAsStream("/DynmapModScraper.cfg");
             FileOutputStream fos = null;
             if (is != null) {
                 try {

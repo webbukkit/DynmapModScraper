@@ -923,6 +923,18 @@ public class DynmapModScraper
                             txtref.add(sides[1]);
                             txtref.add(sides[2]);
                             break;
+                        case FENCEGATE:
+                            trec.setTransparency(Transparency.TRANSPARENT);
+                            // Model record for fence gate patches
+                            mrec = new ModelRecord(id, meta, b);
+                            mrec.setLine("customblock", "class=org.dynmap.hdmap.renderer.FenceGateBlockRenderer,type=fence","link0=107");
+                            trec.addPatch(0, cmult, sides[0]);
+                            trec.addPatch(1, cmult, sides[1]);
+                            trec.addPatch(2, cmult, sides[2]);
+                            txtref.add(sides[0]);
+                            txtref.add(sides[1]);
+                            txtref.add(sides[2]);
+                            break;
                         default:    // Unhandled cases: need models but we don't know which yet
                             trec.setTransparency(Transparency.TRANSPARENT); // Assume transparent
                             /* Model record for cuboid */

@@ -19,6 +19,7 @@ import net.minecraft.block.Block;
 import net.minecraft.block.BlockHalfSlab;
 import net.minecraft.block.BlockLeavesBase;
 import net.minecraft.block.BlockRailBase;
+import net.minecraft.block.BlockTrapDoor;
 import net.minecraft.block.material.Material;
 import net.minecraft.crash.CrashReport;
 import net.minecraft.tileentity.TileEntity;
@@ -536,10 +537,14 @@ public class DynmapModScraper
         return s;
     }
 
-    private void prepBlock(Block b) {
+    private void prepBlock(Block b, int meta) {
+        if (b instanceof BlockTrapDoor) {
+            BlockTrapDoor btd = (BlockTrapDoor) b;
+            btd.setBlockBoundsForBlockRender(meta);
+        }
     }
     
-    private void restoreBlock(Block b) {
+    private void restoreBlock(Block b, int meta) {
     }
     
     private int getColorModifier(Block b, int meta) {
@@ -728,29 +733,31 @@ public class DynmapModScraper
             }
             String blockline = "Block: id=" + id + ", class=" + b.getClass().getName() + ", renderer=" + rid + "(" + rt + "), isOpaqueCube=" + b.isOpaqueCube() + ", name=" + b.getLocalizedName() + "(" + bname + ")\n";
 
-            double x0  = b.getBlockBoundsMinX();
-            double y0  = b.getBlockBoundsMinY();
-            double z0  = b.getBlockBoundsMinZ();
-            double x1  = b.getBlockBoundsMaxX();
-            double y1  = b.getBlockBoundsMaxY();
-            double z1  = b.getBlockBoundsMaxZ();
-
-            boolean isFull = true;
-            boolean badBox = false;
-            if ((x0 != 0.0) || (y0 != 0.0) || (z0 != 0.0) || (x1 != 1.0) || (y1 != 1.0) || (z1 != 1.0)) {
-                blockline += String.format("  bounds=%f.%f,%f:%f,%f,%f\n", x0, y0, z0, x1, y1, z1);
-                isFull = false;
-                if (x0 < 0.0) { badBox = true; x0 = 0.0; }
-                if (y0 < 0.0) { badBox = true; y0 = 0.0; }
-                if (z0 < 0.0) { badBox = true; z0 = 0.0; }
-                if (x1 > 1.0) { badBox = true; x1 = 1.0; }
-                if (y1 > 1.0) { badBox = true; y1 = 1.0; }
-                if (z1 > 1.0) { badBox = true; z1 = 1.0; }
-            }
-            // Prep block for scan
-            prepBlock(b);
-            
             for (int meta = 0; meta < 16; meta++) {
+                // Prep block for scan
+                prepBlock(b, meta);
+                
+                // Get bounds for the block
+                double x0  = b.getBlockBoundsMinX();
+                double y0  = b.getBlockBoundsMinY();
+                double z0  = b.getBlockBoundsMinZ();
+                double x1  = b.getBlockBoundsMaxX();
+                double y1  = b.getBlockBoundsMaxY();
+                double z1  = b.getBlockBoundsMaxZ();
+
+                boolean isFull = true;
+                boolean badBox = false;
+                if ((x0 != 0.0) || (y0 != 0.0) || (z0 != 0.0) || (x1 != 1.0) || (y1 != 1.0) || (z1 != 1.0)) {
+                    blockline += String.format("  bounds=%f.%f,%f:%f,%f,%f\n", x0, y0, z0, x1, y1, z1);
+                    isFull = false;
+                    if (x0 < 0.0) { badBox = true; x0 = 0.0; }
+                    if (y0 < 0.0) { badBox = true; y0 = 0.0; }
+                    if (z0 < 0.0) { badBox = true; z0 = 0.0; }
+                    if (x1 > 1.0) { badBox = true; x1 = 1.0; }
+                    if (y1 > 1.0) { badBox = true; y1 = 1.0; }
+                    if (z1 > 1.0) { badBox = true; z1 = 1.0; }
+                }
+
                 String sides[] = new String[6];
                 boolean hit = false;
                 for (int side = 0; side < 6; side++) {
@@ -1215,9 +1222,9 @@ public class DynmapModScraper
                         mlist.add(mrec);
                     }
                 }
+                // Restore block
+                restoreBlock(b, meta);
             }
-            // Restore block
-            restoreBlock(b);
         }
         HashSet<String> mods = new HashSet<String>();
         mods.addAll(txtRecsByMod.keySet());

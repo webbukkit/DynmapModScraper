@@ -3,9 +3,9 @@
 	<property environment="env" />
 
 	<!-- Properties (version) -->
-	<property name="mc.version" value="1.6.4" />
-	<property name="forge.baseversion" value="9.11.1" />
-	<property name="forge.build" value="953" />
+	<property name="mc.version" value="1.5.2"/>
+	<property name="forge.baseversion" value="7.8.1"/>
+	<property name="forge.build" value="738"/>
 	<property name="project.version" value="0.1" />
 	<property name="project.devversion" value="-alpha-1" />
 
@@ -102,6 +102,8 @@
 		<delete dir="${forge.dir}" failonerror="false" />
 
 		<unzip dest="${forge.dir}/.." src="${download.dir}/${forge.name}" />
+
+		<copy todir="${forge.dir}/fml" file="${src.dir}/fml.py"/>
 
 		<!-- Fix executable permissions -->
 		<chmod dir="${forge.dir}" perm="ugo+rx" includes="**.sh" />

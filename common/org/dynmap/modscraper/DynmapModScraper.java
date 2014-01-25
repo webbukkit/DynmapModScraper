@@ -3,14 +3,14 @@ package org.dynmap.modscraper;
 import cpw.mods.fml.common.Loader;
 import cpw.mods.fml.common.Mod;
 import cpw.mods.fml.common.ModContainer;
-import cpw.mods.fml.common.Mod.EventHandler;
 import cpw.mods.fml.common.Mod.Instance;
+import cpw.mods.fml.common.Mod.PreInit;
+import cpw.mods.fml.common.Mod.ServerStarted;
 import cpw.mods.fml.common.SidedProxy;
 import cpw.mods.fml.common.event.FMLPreInitializationEvent;
 import cpw.mods.fml.common.event.FMLServerStartingEvent; 
 import cpw.mods.fml.common.network.NetworkMod;
 import cpw.mods.fml.common.registry.GameRegistry;
-import cpw.mods.fml.common.registry.GameRegistry.UniqueIdentifier;
 import net.minecraftforge.common.ConfigCategory;
 import net.minecraftforge.common.Configuration;
 import net.minecraftforge.common.ForgeDirection;
@@ -37,6 +37,7 @@ import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -47,13 +48,16 @@ import java.util.Set;
 import java.util.TreeSet;
 import java.util.logging.Logger;
 
+import com.google.common.collect.ImmutableTable;
+import com.google.common.collect.Table;
+
 @Mod(modid = "DynmapModScraper", name = "", version = Version.VER)
 @NetworkMod(clientSideRequired = true, serverSideRequired = false)
 public class DynmapModScraper
 {    
     public static Logger log = Logger.getLogger("DynmapModScraper");
     
-    public static final String MCVERSIONLIMIT = "1.6-";
+    public static final String MCVERSIONLIMIT = "1.5";
     
     // The instance of your mod that Forge uses.
     @Instance("DynmapModScraper")
@@ -294,7 +298,7 @@ public class DynmapModScraper
         }
     }
     
-    @EventHandler
+    @PreInit
     public void preInit(FMLPreInitializationEvent event)
     {
         File cfgf = event.getSuggestedConfigurationFile();
@@ -669,7 +673,8 @@ public class DynmapModScraper
         
     }
 
-    @EventHandler
+    @SuppressWarnings("unchecked")
+    @ServerStarted
     public void serverStarted(FMLServerStartingEvent event)
     {
         log.info("DynmapMapScraper active");
@@ -680,6 +685,26 @@ public class DynmapModScraper
         }
         boolean savedGraphicsLevel = Block.leaves.graphicsLevel;
         Block.leaves.setGraphicsLevel(true);
+        
+        ImmutableTable<String, String, Integer> modObjectTable = null;
+        try {
+            Field f = cpw.mods.fml.common.registry.GameData.class.getField("modObjectTable");
+            f.setAccessible(true);
+            modObjectTable = (ImmutableTable<String, String, Integer>) f.get(null);
+        } catch (SecurityException e) {
+        } catch (NoSuchFieldException e) {
+        } catch (IllegalArgumentException e) {
+        } catch (IllegalAccessException e) {
+        }
+        if (modObjectTable == null) {
+            crash("failed to find modObjectTable - aborting load()");
+            return;
+        }
+        HashMap<Integer, String[]> modblockbyid = new HashMap<Integer, String[]>();
+        for (Table.Cell<String,String,Integer> cell : modObjectTable.cellSet()) {
+            String[] mod_block = new String[] { cell.getRowKey(), cell.getColumnKey() };
+            modblockbyid.put(cell.getValue(), mod_block);
+        }
         
         HashMap<String,String> textures = new HashMap<String,String>(); // ID by name
         HashMap<String,HashSet<String>> texIDByMod = new HashMap<String,HashSet<String>>(); // IDs by mod
@@ -696,10 +721,10 @@ public class DynmapModScraper
             String bname = b.getUnlocalizedName();
             RendererType rt = RendererType.byID(rid);
             String recmod = null;
-            UniqueIdentifier ui = GameRegistry.findUniqueIdentifierFor(b);
+            String[] ui = modblockbyid.get(id);
             if (ui != null) {
-                recmod = ui.modId;
-                bname = ui.name;
+                recmod = ui[0];
+                bname = ui[1];
             }
             String blockline = "Block: id=" + id + ", class=" + b.getClass().getName() + ", renderer=" + rid + "(" + rt + "), isOpaqueCube=" + b.isOpaqueCube() + ", name=" + b.getLocalizedName() + "(" + bname + ")\n";
 
@@ -775,7 +800,7 @@ public class DynmapModScraper
                             txt = split[1];
                             if (recmod == null) recmod = modIdByLowerCase.get(mod.toLowerCase());
                         }
-                        textures.put(mod + "/" + txt, "assets/" + mod.toLowerCase() + "/textures/blocks/" + txt + ".png");
+                        textures.put(mod + "/" + txt, "mods/" + mod + "/textures/blocks/" + txt + ".png");
                         sides[side] = mod + "/" + txt;
                     }
                 }
@@ -1211,7 +1236,7 @@ public class DynmapModScraper
             }
             ArrayList<String> txtlines = new ArrayList<String>();
             try {
-                txtlines.add("\ntexturepath:assets/" + mod.toLowerCase() + "/textures/blocks/");
+                txtlines.add("\ntexturepath:mods/" + mod + "/textures/blocks/");
                 // Write any texture references
                 HashSet<String> txtlist = texIDByMod.get(mod);
                 if (txtlist != null) {

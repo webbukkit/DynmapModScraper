@@ -1,10 +1,10 @@
 /bin
 /build
 /lib
-/download
-/temp
-/target
-DynmapModScraper-*.jar
+Dynmap-*.jar
 .classpath
-/.settings
+/eclipse
+/.gradle
 .project
+/.settings
+/run

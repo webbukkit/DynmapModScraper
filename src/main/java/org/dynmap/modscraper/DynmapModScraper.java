@@ -8,27 +8,25 @@ import cpw.mods.fml.common.Mod.Instance;
 import cpw.mods.fml.common.SidedProxy;
 import cpw.mods.fml.common.event.FMLPreInitializationEvent;
 import cpw.mods.fml.common.event.FMLServerStartingEvent; 
-import cpw.mods.fml.common.network.NetworkMod;
 import cpw.mods.fml.common.registry.GameRegistry;
 import cpw.mods.fml.common.registry.GameRegistry.UniqueIdentifier;
-import net.minecraftforge.common.ConfigCategory;
-import net.minecraftforge.common.Configuration;
-import net.minecraftforge.common.ForgeDirection;
-import net.minecraftforge.common.Property;
 import net.minecraft.block.Block;
-import net.minecraft.block.BlockHalfSlab;
 import net.minecraft.block.BlockLeavesBase;
 import net.minecraft.block.BlockRailBase;
 import net.minecraft.block.material.Material;
 import net.minecraft.crash.CrashReport;
+import net.minecraft.init.Blocks;
 import net.minecraft.tileentity.TileEntity;
-import net.minecraft.util.Icon;
 import net.minecraft.util.ReportedException;
 import net.minecraft.util.Vec3Pool;
 import net.minecraft.world.ColorizerFoliage;
 import net.minecraft.world.ColorizerGrass;
 import net.minecraft.world.IBlockAccess;
 import net.minecraft.world.biome.BiomeGenBase;
+import net.minecraftforge.common.config.ConfigCategory;
+import net.minecraftforge.common.config.Configuration;
+import net.minecraftforge.common.config.Property;
+import net.minecraftforge.common.util.ForgeDirection;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -48,7 +46,6 @@ import java.util.TreeSet;
 import java.util.logging.Logger;
 
 @Mod(modid = "DynmapModScraper", name = "", version = Version.VER)
-@NetworkMod(clientSideRequired = true, serverSideRequired = false)
 public class DynmapModScraper
 {    
     public static Logger log = Logger.getLogger("DynmapModScraper");
@@ -341,7 +338,7 @@ public class DynmapModScraper
                 if ((cfgfile != null) && (cfgfile.length() > 0)) {
                     cfgfileByMod.put(mod, cfgfile);
                 }
-                String sections[] = { Configuration.CATEGORY_BLOCK };
+                String sections[] = { "block" };
                 sections = cfg.get("BlockSections", mod, sections).getStringList();
                 sectionsByMod.put(mod, sections);
                 
@@ -539,7 +536,7 @@ public class DynmapModScraper
     }
     
     private int getColorModifier(Block b, int meta) {
-        int rc = b.getRenderColor(meta) & 0xFFFFFF;    // Chec render color multiplier
+        int rc = b.func_149741_i(meta) & 0xFFFFFF;    // getRenderColor(meta) Chec render color multiplier
         if (rc == 0xFFFFFF) {  // None
             return 0;
         }
@@ -568,105 +565,61 @@ public class DynmapModScraper
         public static final int Y_AT = 1;
         public static final int Y_BELOW = 0;
         public static final int Y_ABOVE = 2;
-        public int id[] = new int[3];    // 0=below, 1=at, 2=above
+        public Block blk[] = { Blocks.air, Blocks.air, Blocks.air };    // 0=below, 1=at, 2=above
         public int data[] = new int[3];    // 0=below, 1=at, 2=above
-        public Material mat[] = { Material.air, Material.air, Material.air }; // 0=below, 1=at, 2=above
         public BiomeGenBase biome = BiomeGenBase.forest;
         
-        public int getBlockId(int x, int y, int z) {
+        public Block func_147439_a(int x, int y, int z) {   // getBlock(x,y,z)
             if ((x != FIXEDX) || (z != FIXEDZ) || (y < (FIXEDY-1)) || (y > FIXEDY+1)) {
-                return 0;
+                return Blocks.air;
             }
-            return id[y - FIXEDY + 1];
+            return blk[y - FIXEDY + 1];
         }
-
-        public TileEntity getBlockTileEntity(int x, int y, int z) {
+        public TileEntity func_147438_o(int x, int y, int z) { // getBlockTileEntity(x,y,z)
             return null;
         }
-
         public int getLightBrightnessForSkyBlocks(int x, int y, int z, int l) {
             return 0;
         }
-
         public int getBlockMetadata(int x, int y, int z) {
             if ((x != FIXEDX) || (z != FIXEDZ) || (y < (FIXEDY-1)) || (y > FIXEDY+1)) {
                 return 0;
             }
             return data[y - FIXEDY + 1];
         }
-
-        public float getBrightness(int x, int y, int z, int l) {
-            return 0;
-        }
-
-        public float getLightBrightness(int x, int y, int z) {
-            return 0;
-        }
-
-        public Material getBlockMaterial(int x, int y, int z) {
-            if ((x != FIXEDX) || (z != FIXEDZ) || (y < (FIXEDY-1)) || (y > FIXEDY+1)) {
-                return Material.air;
-            }
-            return mat[y - FIXEDY + 1];
-        }
-        
-        public boolean isBlockOpaqueCube(int x, int y, int z) {
-            if ((x != FIXEDX) || (z != FIXEDZ) || (y < (FIXEDY-1)) || (y > FIXEDY+1)) {
-                return false;
-            }
-            return Block.blocksList[id[y - FIXEDY + 1]].isOpaqueCube();
-        }
-
-        public boolean isBlockNormalCube(int x, int y, int z) {
-            if ((x != FIXEDX) || (z != FIXEDZ) || (y < (FIXEDY-1)) || (y > FIXEDY+1)) {
-                return false;
-            }
-            return Block.isNormalCube(id[y - FIXEDY + 1]);
-        }
-
-        public boolean isAirBlock(int x, int y, int z) {
+        public boolean func_147437_c(int x, int y, int z) { // isAitBlock(x,y,z)
             if ((x != FIXEDX) || (z != FIXEDZ) || (y < (FIXEDY-1)) || (y > FIXEDY+1)) {
                 return true;
             }
-            return id[y - FIXEDY + 1] == 0;
+            return blk[y - FIXEDY + 1] == Blocks.air;
         }
-
         public BiomeGenBase getBiomeGenForCoords(int x, int z) {
             return biome;
         }
-
         public int getHeight() {
             return 256;
         }
-
         public boolean extendedLevelsInChunkCache() {
             return true;
         }
-
-        public boolean doesBlockHaveSolidTopSurface(int x, int y, int z) {
-            return isBlockSolidOnSide(x, y, z, ForgeDirection.UP, false);
-        }
-
         public Vec3Pool getWorldVec3Pool() {
             return null;
         }
-
-        public int isBlockProvidingPowerTo(int i, int j, int k, int l) {
+        public int isBlockProvidingPowerTo(int var1, int var2, int var3,
+                int var4) {
             return 0;
         }
-
-        public boolean isBlockSolidOnSide(int x, int y, int z,
-                ForgeDirection side, boolean _default) {
+        public boolean isSideSolid(int x, int y, int z, ForgeDirection side,
+                boolean _default) {
             if ((x != FIXEDX) || (z != FIXEDZ) || (y < (FIXEDY-1)) || (y > FIXEDY+1)) {
                 return false;
             }
-            Block block = Block.blocksList[getBlockId(x, y, z)];
+            Block block = func_147439_a(x, y, z);
             if(block == null) {
                 return false;
             }
-            return block.isBlockSolid(this, x, y, z, side.ordinal());
+            return block.isSideSolid(this, x, y, z, side);
         }
-        
     }
 
     @EventHandler
@@ -678,8 +631,10 @@ public class DynmapModScraper
             crash("preInit failed - aborting load()");
             return;
         }
-        boolean savedGraphicsLevel = Block.leaves.graphicsLevel;
-        Block.leaves.setGraphicsLevel(true);
+        boolean savedGraphicsLevel = !Blocks.leaves.func_149662_c();
+        Blocks.leaves.func_150122_b(true);
+        Blocks.leaves2.func_150122_b(true);
+
         
         HashMap<String,String> textures = new HashMap<String,String>(); // ID by name
         HashMap<String,HashSet<String>> texIDByMod = new HashMap<String,HashSet<String>>(); // IDs by mod
@@ -690,10 +645,10 @@ public class DynmapModScraper
         datadir.mkdirs();
 
         for (int id = 0; id < 4096; id++) {
-            Block b = Block.blocksList[id];
+            Block b = Block.func_149729_e(id);
             if (b == null) continue;
-            int rid = b.getRenderType();
-            String bname = b.getUnlocalizedName();
+            int rid = b.func_149645_b(); // getRenderType()
+            String bname = b.func_149739_a();
             RendererType rt = RendererType.byID(rid);
             String recmod = null;
             UniqueIdentifier ui = GameRegistry.findUniqueIdentifierFor(b);

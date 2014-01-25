@@ -53,7 +53,7 @@ public class DynmapModScraper
 {    
     public static Logger log = Logger.getLogger("DynmapModScraper");
     
-    public static final String MCVERSIONLIMIT = "1.6-";
+    public static final String MCVERSIONLIMIT = "1.6";
     
     // The instance of your mod that Forge uses.
     @Instance("DynmapModScraper")

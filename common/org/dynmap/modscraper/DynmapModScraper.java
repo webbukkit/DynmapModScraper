@@ -538,10 +538,6 @@ public class DynmapModScraper
     }
 
     private void prepBlock(Block b, int meta) {
-        if (b instanceof BlockTrapDoor) {
-            BlockTrapDoor btd = (BlockTrapDoor) b;
-            btd.setBlockBoundsForBlockRender(meta);
-        }
     }
     
     private void restoreBlock(Block b, int meta) {
@@ -734,6 +730,17 @@ public class DynmapModScraper
             String blockline = "Block: id=" + id + ", class=" + b.getClass().getName() + ", renderer=" + rid + "(" + rt + "), isOpaqueCube=" + b.isOpaqueCube() + ", name=" + b.getLocalizedName() + "(" + bname + ")\n";
 
             for (int meta = 0; meta < 16; meta++) {
+                // Build fake block access context for this block
+                FakeBlockAccess fba = new FakeBlockAccess();
+                fba.id[FakeBlockAccess.Y_AT] = id;
+                fba.data[FakeBlockAccess.Y_AT] = meta;
+                fba.mat[FakeBlockAccess.Y_AT] = b.blockMaterial;
+                // Set block bounds based on state 
+                try {
+                    b.setBlockBoundsBasedOnState(fba, FakeBlockAccess.FIXEDX, FakeBlockAccess.FIXEDY, FakeBlockAccess.FIXEDZ);
+                } catch (Exception x) {
+                    // Some blocks don't handle this well - live without it
+                }
                 // Prep block for scan
                 prepBlock(b, meta);
                 
@@ -748,7 +755,6 @@ public class DynmapModScraper
                 boolean isFull = true;
                 boolean badBox = false;
                 if ((x0 != 0.0) || (y0 != 0.0) || (z0 != 0.0) || (x1 != 1.0) || (y1 != 1.0) || (z1 != 1.0)) {
-                    blockline += String.format("  bounds=%f.%f,%f:%f,%f,%f\n", x0, y0, z0, x1, y1, z1);
                     isFull = false;
                     if (x0 < 0.0) { badBox = true; x0 = 0.0; }
                     if (y0 < 0.0) { badBox = true; y0 = 0.0; }
@@ -764,7 +770,6 @@ public class DynmapModScraper
                     Icon ico = null;
                     try {
                         if (rt == RendererType.DOOR) {    // Door is special : need to hack world data to make it look like stacked blocks
-                            FakeBlockAccess fba = new FakeBlockAccess();
                             fba.id[FakeBlockAccess.Y_AT] = id;
                             fba.data[FakeBlockAccess.Y_AT] = meta;
                             fba.mat[FakeBlockAccess.Y_AT] = b.blockMaterial;

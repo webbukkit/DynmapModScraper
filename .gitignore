@@ -8,3 +8,5 @@ DynmapModScraper-*.jar
 .classpath
 /.settings
 .project
+/run
+/.gradle

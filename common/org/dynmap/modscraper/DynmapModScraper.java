@@ -13,16 +13,21 @@ import cpw.mods.fml.common.registry.GameRegistry;
 import cpw.mods.fml.common.registry.GameRegistry.UniqueIdentifier;
 import net.minecraftforge.common.ConfigCategory;
 import net.minecraftforge.common.Configuration;
+import net.minecraftforge.common.ForgeDirection;
 import net.minecraftforge.common.Property;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockHalfSlab;
 import net.minecraft.block.BlockLeavesBase;
 import net.minecraft.block.BlockRailBase;
+import net.minecraft.block.material.Material;
 import net.minecraft.crash.CrashReport;
+import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.Icon;
 import net.minecraft.util.ReportedException;
+import net.minecraft.util.Vec3Pool;
 import net.minecraft.world.ColorizerFoliage;
 import net.minecraft.world.ColorizerGrass;
+import net.minecraft.world.IBlockAccess;
 import net.minecraft.world.biome.BiomeGenBase;
 
 import java.io.BufferedReader;
@@ -555,6 +560,114 @@ public class DynmapModScraper
         }
         return 17000;   // COLORMOD_MULTTONED
     }
+    
+    private static class FakeBlockAccess implements IBlockAccess {
+        public static final int FIXEDX = 0;
+        public static final int FIXEDY = 64;
+        public static final int FIXEDZ = 0;
+        public static final int Y_AT = 1;
+        public static final int Y_BELOW = 0;
+        public static final int Y_ABOVE = 2;
+        public int id[] = new int[3];    // 0=below, 1=at, 2=above
+        public int data[] = new int[3];    // 0=below, 1=at, 2=above
+        public Material mat[] = { Material.air, Material.air, Material.air }; // 0=below, 1=at, 2=above
+        public BiomeGenBase biome = BiomeGenBase.forest;
+        
+        public int getBlockId(int x, int y, int z) {
+            if ((x != FIXEDX) || (z != FIXEDZ) || (y < (FIXEDY-1)) || (y > FIXEDY+1)) {
+                return 0;
+            }
+            return id[y - FIXEDY + 1];
+        }
+
+        public TileEntity getBlockTileEntity(int x, int y, int z) {
+            return null;
+        }
+
+        public int getLightBrightnessForSkyBlocks(int x, int y, int z, int l) {
+            return 0;
+        }
+
+        public int getBlockMetadata(int x, int y, int z) {
+            if ((x != FIXEDX) || (z != FIXEDZ) || (y < (FIXEDY-1)) || (y > FIXEDY+1)) {
+                return 0;
+            }
+            return data[y - FIXEDY + 1];
+        }
+
+        public float getBrightness(int x, int y, int z, int l) {
+            return 0;
+        }
+
+        public float getLightBrightness(int x, int y, int z) {
+            return 0;
+        }
+
+        public Material getBlockMaterial(int x, int y, int z) {
+            if ((x != FIXEDX) || (z != FIXEDZ) || (y < (FIXEDY-1)) || (y > FIXEDY+1)) {
+                return Material.air;
+            }
+            return mat[y - FIXEDY + 1];
+        }
+        
+        public boolean isBlockOpaqueCube(int x, int y, int z) {
+            if ((x != FIXEDX) || (z != FIXEDZ) || (y < (FIXEDY-1)) || (y > FIXEDY+1)) {
+                return false;
+            }
+            return Block.blocksList[id[y - FIXEDY + 1]].isOpaqueCube();
+        }
+
+        public boolean isBlockNormalCube(int x, int y, int z) {
+            if ((x != FIXEDX) || (z != FIXEDZ) || (y < (FIXEDY-1)) || (y > FIXEDY+1)) {
+                return false;
+            }
+            return Block.isNormalCube(id[y - FIXEDY + 1]);
+        }
+
+        public boolean isAirBlock(int x, int y, int z) {
+            if ((x != FIXEDX) || (z != FIXEDZ) || (y < (FIXEDY-1)) || (y > FIXEDY+1)) {
+                return true;
+            }
+            return id[y - FIXEDY + 1] == 0;
+        }
+
+        public BiomeGenBase getBiomeGenForCoords(int x, int z) {
+            return biome;
+        }
+
+        public int getHeight() {
+            return 256;
+        }
+
+        public boolean extendedLevelsInChunkCache() {
+            return true;
+        }
+
+        public boolean doesBlockHaveSolidTopSurface(int x, int y, int z) {
+            return isBlockSolidOnSide(x, y, z, ForgeDirection.UP, false);
+        }
+
+        public Vec3Pool getWorldVec3Pool() {
+            return null;
+        }
+
+        public int isBlockProvidingPowerTo(int i, int j, int k, int l) {
+            return 0;
+        }
+
+        public boolean isBlockSolidOnSide(int x, int y, int z,
+                ForgeDirection side, boolean _default) {
+            if ((x != FIXEDX) || (z != FIXEDZ) || (y < (FIXEDY-1)) || (y > FIXEDY+1)) {
+                return false;
+            }
+            Block block = Block.blocksList[getBlockId(x, y, z)];
+            if(block == null) {
+                return false;
+            }
+            return block.isBlockSolid(this, x, y, z, side.ordinal());
+        }
+        
+    }
 
     @EventHandler
     public void serverStarted(FMLServerStartingEvent event)
@@ -618,7 +731,33 @@ public class DynmapModScraper
                 for (int side = 0; side < 6; side++) {
                     Icon ico = null;
                     try {
-                        ico = b.getIcon(side, meta);
+                        if (rt == RendererType.DOOR) {    // Door is special : need to hack world data to make it look like stacked blocks
+                            FakeBlockAccess fba = new FakeBlockAccess();
+                            fba.id[FakeBlockAccess.Y_AT] = id;
+                            fba.data[FakeBlockAccess.Y_AT] = meta;
+                            fba.mat[FakeBlockAccess.Y_AT] = b.blockMaterial;
+                            if (side == 0) {    // Force to top
+                                fba.data[FakeBlockAccess.Y_AT] = 8;
+                                fba.id[FakeBlockAccess.Y_BELOW] = id;
+                                fba.data[FakeBlockAccess.Y_BELOW] = 0;
+                                fba.mat[FakeBlockAccess.Y_BELOW] = b.blockMaterial;
+                            }
+                            else if (side == 1) { // Force to bottom
+                                fba.data[FakeBlockAccess.Y_AT] = 0;
+                                fba.id[FakeBlockAccess.Y_ABOVE] = id;
+                                fba.data[FakeBlockAccess.Y_ABOVE] = 8;
+                                fba.mat[FakeBlockAccess.Y_ABOVE] = b.blockMaterial;
+                            }
+                            if (side < 2) {
+                                ico = b.getBlockTexture(fba, FakeBlockAccess.FIXEDX, FakeBlockAccess.FIXEDY, FakeBlockAccess.FIXEDZ, 2);
+                            }
+                            else {
+                                ico = null;
+                            }
+                        }
+                        else {
+                            ico = b.getIcon(side, meta);
+                        }
                     } catch (Exception x) {
                         // Some mods don't like undefined sides to be requuested
                     }
@@ -955,7 +1094,7 @@ public class DynmapModScraper
                             trec.addPatch(1, cmult, sides[1]);
                             txtref.add(sides[0]);
                             txtref.add(sides[1]);
-                            trec.setComment("FIXME: Top texture (patch0) not properly detected: needs to be manually fixed");
+                            //trec.setComment("FIXME: Top texture (patch0) not properly detected: needs to be manually fixed");
                             break;
                         case TORCH:
                             trec.setTransparency(Transparency.TRANSPARENT); // Assume transparent

@@ -19,7 +19,6 @@ import net.minecraft.block.Block;
 import net.minecraft.block.BlockHalfSlab;
 import net.minecraft.block.BlockLeavesBase;
 import net.minecraft.block.BlockRailBase;
-import net.minecraft.block.BlockTrapDoor;
 import net.minecraft.block.material.Material;
 import net.minecraft.crash.CrashReport;
 import net.minecraft.tileentity.TileEntity;
@@ -383,12 +382,16 @@ public class DynmapModScraper
         return s;
     }
     
-    private File getModConfigFile(String mod) {
+    private File getModConfigFile(String mod, int idx) {
         String file = cfgfileByMod.get(mod);
         if (file == null) {
             return null;
         }
-        File f = new File(file);
+        String[] files = file.split(",");
+        if (idx >= files.length) {
+            return null;
+        }
+        File f = new File(files[idx]);
         if (f.exists() == false) {
             return null;
         }
@@ -432,10 +435,20 @@ public class DynmapModScraper
     
     private IDMapping getBlockIDMappingForMod(String mod) {
         IDMapping idm = new IDMapping();
-        File f = getModConfigFile(mod);
-        if (f == null) {
-            return idm;
+        boolean done = false;
+        for (int idx = 0; !done; idx++) {
+            File f = getModConfigFile(mod, idx);
+            if (f == null) {
+                done = true;
+            }
+            else {
+                processFile(mod, idm, f);
+            }
         }
+        return idm;
+    }
+    
+    private void processFile(String mod, IDMapping idm, File f) {
         Configuration cfg;
         try {
             cfg = new Configuration(f);
@@ -443,13 +456,13 @@ public class DynmapModScraper
         } catch (RuntimeException x) {
             // See if property parse works
             loadConfigAsProperties(f, idm);
-            return idm;
+            return;
         }
         String prefix = prefixByMod.get(mod);
         String suffix = suffixByMod.get(mod);
         String[] sections = sectionsByMod.get(mod);
         if (sections == null) {
-            return idm;
+            return;
         }
         ArrayList<ConfigCategory> seclist = new ArrayList<ConfigCategory>();
         for (String s : sections) {
@@ -516,9 +529,7 @@ public class DynmapModScraper
                     }
                 }
             }
-            
         }
-        return idm;
     }
     
     private static String getBlockID(int id, IDMapping idmap) {
@@ -1214,7 +1225,6 @@ public class DynmapModScraper
             log.info("Generating files for " + mod);
             FileWriter txt = null;
             FileWriter modf = null;
-            File cfgfile = getModConfigFile(mod);
             IDMapping aliases = getBlockIDMappingForMod(mod);
             String modver = "";
             ModContainer modc = Loader.instance().getIndexedModList().get(mod);
@@ -1227,7 +1237,8 @@ public class DynmapModScraper
                 // Write any texture references
                 HashSet<String> txtlist = texIDByMod.get(mod);
                 if (txtlist != null) {
-                    for (String id : txtlist) {
+                    TreeSet<String> ordered_ids = new TreeSet<String>(txtlist);
+                    for (String id : ordered_ids) {
                         String fname = textures.get(id);
                         txtlines.add("texture:id=" + id + ",filename=" + fname);
                     }
@@ -1339,10 +1350,19 @@ public class DynmapModScraper
                     }
                     txt.write("\n");
                 }
-                if (cfgfile != null) {
-                    txt.write("cfgfile:" + cfgfile.getPath() + "\n\n");
+                boolean match = false;
+                for (int fidx = 0; ; fidx++) {
+                    File cfgfile = getModConfigFile(mod, fidx);
+                    if (cfgfile != null) {
+                        txt.write("cfgfile:" + cfgfile.getPath() + "\n");
+                        match = true;
+                    }
+                    else {
+                        break;
+                    }
                 }
-                else {
+                txt.write("\n");
+                if (!match) {
                     txt.write("# Configuration file not found!\n\n");
                     log.warning(mod + "-texture.txt missing configuration file!");
                 }
@@ -1444,10 +1464,19 @@ public class DynmapModScraper
                         }
                         modf.write("\n");
                     }
-                    if (cfgfile != null) {
-                        modf.write("cfgfile:" + cfgfile.getPath() + "\n\n");
+                    match = false;
+                    for (int fidx = 0; ; fidx++) {
+                        File cfgfile = getModConfigFile(mod, fidx);
+                        if (cfgfile != null) {
+                            modf.write("cfgfile:" + cfgfile.getPath() + "\n");
+                            match = true;
+                        }
+                        else {
+                            break;
+                        }
                     }
-                    else {
+                    modf.write("\n");
+                    if (!match) {
                         modf.write("# Configuration file not found!\n\n");
                         log.warning(mod + "-models.txt missing configuration file!");
                     }

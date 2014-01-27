@@ -21,6 +21,7 @@ import net.minecraft.block.BlockLeavesBase;
 import net.minecraft.block.BlockRailBase;
 import net.minecraft.block.material.Material;
 import net.minecraft.crash.CrashReport;
+import net.minecraft.item.Item;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.Icon;
 import net.minecraft.util.ReportedException;
@@ -38,6 +39,8 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
 import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -70,11 +73,13 @@ public class DynmapModScraper
     public boolean good_init = false;
     
     private static HashMap<String, String> modIdByLowerCase = new HashMap<String, String>();
+    private static HashMap<String, String> fullModIdByLowerCase = new HashMap<String, String>();
     private static HashMap<String, String> cfgfileByMod = new HashMap<String, String>();
     private static HashMap<String, String[]> sectionsByMod = new HashMap<String, String[]>();
     private static HashMap<String, String> prefixByMod = new HashMap<String, String>();
     private static HashMap<String, String> suffixByMod = new HashMap<String, String>();
     private static HashMap<String, String> biomeSectionsByMod = new HashMap<String, String>();
+    private static HashMap<String, String> itemSectionsByMod = new HashMap<String, String>();
     
     public static void crash(Exception x, String msg) {
         CrashReport crashreport = CrashReport.makeCrashReport(x, msg);
@@ -267,6 +272,11 @@ public class DynmapModScraper
         }
     }
     
+    private static class PipeRecord {
+        int itemid; // ID of pipe
+        String iconid;  // Icon ID for pipe
+    }
+    
     public static class StringRun {
         String str;
         int start;
@@ -296,6 +306,14 @@ public class DynmapModScraper
             nsr.count = 1;
             lst.add(nsr);
         }
+    }
+    
+    private String normalizeModID(String id) {
+        int idx = id.indexOf('|');
+        if (idx > 0) {
+            id = id.substring(0, idx);
+        }
+        return id;
     }
     
     @PreInit
@@ -333,8 +351,16 @@ public class DynmapModScraper
             cfg.load();
             good_init = true;
             Set<String> mods = Loader.instance().getIndexedModList().keySet();
+            Set<String> donemods = new HashSet<String>();
             for (String mod : mods) {
+                String fullmod = mod;
+                mod = normalizeModID(mod);
+
+                if (donemods.contains(mod)) continue;
+                donemods.add(mod);
+                
                 modIdByLowerCase.put(mod.toLowerCase(), mod); // Add lower case to allow case restore
+                fullModIdByLowerCase.put(mod.toLowerCase(), fullmod);   // Save full version (for modname:)
                 
                 String cfgfile = "config/" + mod + ".cfg";
                 File f = new File(cfgfile);
@@ -361,7 +387,10 @@ public class DynmapModScraper
                 if (biomes.length() > 0) {
                     biomeSectionsByMod.put(mod, biomes);
                 }
-                
+                String items = cfg.get("ItemSection", mod, "item").getString();
+                if (items.length() > 0) {
+                    itemSectionsByMod.put(mod, items);
+                }
             }
         }
         catch (Exception e)
@@ -407,6 +436,7 @@ public class DynmapModScraper
         HashSet<String> used = new HashSet<String>();
         boolean missedID;
         Map<Integer, String> biomemap = new HashMap<Integer, String>();
+        Map<Integer, String> itemmap = new HashMap<Integer, String>();
     }
 
     private void loadConfigAsProperties(File f, IDMapping idm) {
@@ -534,10 +564,47 @@ public class DynmapModScraper
                 }
             }
         }
+        String itemsect = itemSectionsByMod.get(mod);
+        if (itemsect != null) {
+            ConfigCategory items = cfg.getCategory(itemsect);
+            itemsect = itemsect.replace('.', '/');
+            if (items != null) {
+                for (String k : items.keySet()) {
+                    Property p = items.get(k);
+                    if ((p != null) && p.isIntValue()) {
+                        int v = p.getInt();
+                        if ((v >= 1) && (v < 32768)) {
+                            k = itemsect + '/' + k;
+                            if (k.startsWith("block/") || itemsect.startsWith("blocks/")) {
+                                k = k.substring(k.indexOf('/') + 1);
+                            }
+                            else if (k.startsWith("item/")) {
+                                k = "item_" + k.substring(5);
+                            }
+                            k = k.replace(' ', '_');
+                            idm.itemmap.put(v, k);
+                        }
+                    }
+                }
+            }
+        }
     }
     
     private static String getBlockID(int id, IDMapping idmap) {
         String s = idmap.map.get(id);
+        if (s == null) {
+            s = Integer.toString(id);
+            idmap.missedID = true;
+        }
+        else {
+            idmap.used.add(s);
+        }
+        return s;
+    }
+
+    private static String getItemID(int id, IDMapping idmap) {
+        id = id - 256;  // Standard offset from item ID versus setting
+        String s = idmap.itemmap.get(id);
         if (s == null) {
             s = Integer.toString(id);
             idmap.missedID = true;
@@ -685,11 +752,68 @@ public class DynmapModScraper
         
     }
 
+    private static class ModuleCtx {
+        String recmod;
+        String bname;
+        
+        void reset() {
+            recmod = null;
+            bname = null;
+        }
+    }
+    // Texture IDs by name
+    private HashMap<String,String> textures = new HashMap<String,String>();
+    // IDs by mod
+    private HashMap<String,HashSet<String>> texIDByMod = new HashMap<String,HashSet<String>>();
+    // Texture records by mod
+    private HashMap<String, ArrayList<TextureRecord>> txtRecsByMod = new HashMap<String, ArrayList<TextureRecord>>();
+    // Model records by mod
+    private HashMap<String, ArrayList<ModelRecord>> modRecsByMod = new HashMap<String, ArrayList<ModelRecord>>();
+    // Pipe records by mod
+    private HashMap<String, ArrayList<PipeRecord>> pipeRecsByMod = new HashMap<String, ArrayList<PipeRecord>>();
+    private HashMap<Integer, String[]> modblockbyid = new HashMap<Integer, String[]>();
+
+    // Register icon, and update module ID
+    private String handleIcon(Icon ico, ModuleCtx ctx) {
+        String iconame = ico.getIconName();
+        String[] split = iconame.split(":");
+        String mod, txt;
+        if (split.length == 1) {
+            int idx = iconame.indexOf('/'); // Some mods do this: minecraft base textures are flat
+            if (idx < 0) {
+                mod = "minecraft";
+                txt = split[0];
+            }
+            else {
+                mod = normalizeModID(iconame.substring(0, idx));
+                txt = iconame.substring(idx+1);
+                if (ctx.recmod == null) ctx.recmod = modIdByLowerCase.get(mod.toLowerCase());
+            }
+        }
+        else {
+            mod = normalizeModID(split[0]);
+            txt = split[1];
+            if (ctx.recmod == null) ctx.recmod = modIdByLowerCase.get(mod.toLowerCase());
+        }
+        String id = mod + "/" + txt;
+        textures.put(id, "mods/" + mod + "/textures/blocks/" + txt + ".png");
+        
+        return id;
+    }
+    
     @SuppressWarnings("unchecked")
     @ServerStarted
     public void serverStarted(FMLServerStartingEvent event)
     {
         log.info("DynmapMapScraper active");
+
+        // Reset (in case we're reentering SSP server
+        textures.clear();
+        texIDByMod.clear();
+        txtRecsByMod.clear();
+        modRecsByMod.clear();
+        pipeRecsByMod.clear();
+        modblockbyid.clear();
         
         if (!good_init) {
             crash("preInit failed - aborting load()");
@@ -718,27 +842,27 @@ public class DynmapModScraper
             modblockbyid.put(cell.getValue(), mod_block);
         }
         
-        HashMap<String,String> textures = new HashMap<String,String>(); // ID by name
-        HashMap<String,HashSet<String>> texIDByMod = new HashMap<String,HashSet<String>>(); // IDs by mod
-        HashMap<String, ArrayList<TextureRecord>> txtRecsByMod = new HashMap<String, ArrayList<TextureRecord>>();
-        HashMap<String, ArrayList<ModelRecord>> modRecsByMod = new HashMap<String, ArrayList<ModelRecord>>();
         HashMap<Integer, String> blkComments = new HashMap<Integer, String>();
         File datadir = new File("DynmapModScraper");
         datadir.mkdirs();
-
+        // Process items
+        processItems();
+        
+        ModuleCtx ctx = new ModuleCtx();
+        // Process blocks
         for (int id = 0; id < 4096; id++) {
             Block b = Block.blocksList[id];
             if (b == null) continue;
+            ctx.reset();
             int rid = b.getRenderType();
-            String bname = b.getUnlocalizedName();
+            ctx.bname = b.getUnlocalizedName();
             RendererType rt = RendererType.byID(rid);
-            String recmod = null;
             String[] ui = modblockbyid.get(id);
             if (ui != null) {
-                recmod = ui[0];
-                bname = ui[1];
+                ctx.recmod = normalizeModID(ui[0]);
+                ctx.bname = ui[1];
             }
-            String blockline = "Block: id=" + id + ", class=" + b.getClass().getName() + ", renderer=" + rid + "(" + rt + "), isOpaqueCube=" + b.isOpaqueCube() + ", name=" + b.getLocalizedName() + "(" + bname + ")\n";
+            String blockline = "Block: id=" + id + ", class=" + b.getClass().getName() + ", renderer=" + rid + "(" + rt + "), isOpaqueCube=" + b.isOpaqueCube() + ", name=" + b.getLocalizedName() + "(" + ctx.bname + ")\n";
 
             for (int meta = 0; meta < 16; meta++) {
                 // Build fake block access context for this block
@@ -811,30 +935,17 @@ public class DynmapModScraper
                     }
                     if (ico != null) {
                         hit = true;
-                        sides[side] = ico.getIconName();
-                        String[] split = sides[side].split(":");
-                        String mod, txt;
-                        if (split.length == 1) {
-                            mod = "minecraft";
-                            txt = split[0];
-                        }
-                        else {
-                            mod = split[0];
-                            txt = split[1];
-                            if (recmod == null) recmod = modIdByLowerCase.get(mod.toLowerCase());
-                        }
-                        textures.put(mod + "/" + txt, "mods/" + mod + "/textures/blocks/" + txt + ".png");
-                        sides[side] = mod + "/" + txt;
+                        sides[side] = handleIcon(ico, ctx);
                     }
                 }
-                if (hit && (recmod != null)) {
+                if (hit && (ctx.recmod != null)) {
                     TextureRecord trec = new TextureRecord(id, meta, b);
                     ModelRecord mrec = null;
                     boolean addallsides = false;
-                    HashSet<String> txtref = texIDByMod.get(recmod);
+                    HashSet<String> txtref = texIDByMod.get(ctx.recmod);
                     if (txtref == null) {
                         txtref = new HashSet<String>();
-                        texIDByMod.put(recmod, txtref);
+                        texIDByMod.put(ctx.recmod, txtref);
                     }
                     int cmult = getColorModifier(b, meta);  // Get color multiplier
                     if (cmult == 17000) {
@@ -1201,7 +1312,7 @@ public class DynmapModScraper
                             txtref.add(sides[2]);
                             break;
                         default:    // Unhandled cases: need models but we don't know which yet
-                            log.warning("Using unsupported standard renderer in " + recmod + ": " + rt.toString());
+                            log.warning("Using unsupported standard renderer in " + ctx.recmod + ": " + rt.toString());
                         case CUSTOM:
                             trec.setTransparency(Transparency.TRANSPARENT); // Assume transparent
                             /* Model record for cuboid */
@@ -1220,20 +1331,20 @@ public class DynmapModScraper
 
                     if (blockline != null) {
                         blockline = null;
-                        blkComments.put(id, ":* (" + bname + "), render=" + rid + "(" + rt + "), opaque=" + b.isOpaqueCube() + ",cls=" + b.getClass().getName());
+                        blkComments.put(id, ":* (" + ctx.bname + "), render=" + rid + "(" + rt + "), opaque=" + b.isOpaqueCube() + ",cls=" + b.getClass().getName());
                     }
 
-                    ArrayList<TextureRecord> tlist = txtRecsByMod.get(recmod);
+                    ArrayList<TextureRecord> tlist = txtRecsByMod.get(ctx.recmod);
                     if (tlist == null) {
                         tlist = new ArrayList<TextureRecord>();
-                        txtRecsByMod.put(recmod,  tlist);
+                        txtRecsByMod.put(ctx.recmod,  tlist);
                     }
                     tlist.add(trec);
                     if (mrec != null) {
-                        ArrayList<ModelRecord> mlist = modRecsByMod.get(recmod);
+                        ArrayList<ModelRecord> mlist = modRecsByMod.get(ctx.recmod);
                         if (mlist == null) {
                             mlist = new ArrayList<ModelRecord>();
-                            modRecsByMod.put(recmod,  mlist);
+                            modRecsByMod.put(ctx.recmod,  mlist);
                         }
                         mlist.add(mrec);
                     }
@@ -1245,8 +1356,10 @@ public class DynmapModScraper
         HashSet<String> mods = new HashSet<String>();
         mods.addAll(txtRecsByMod.keySet());
         mods.addAll(modRecsByMod.keySet());
+        mods.addAll(pipeRecsByMod.keySet());
         mods.remove("minecraft");
         for (String mod : mods) {
+            if (mod == null) continue;
             log.info("Generating files for " + mod);
             FileWriter txt = null;
             FileWriter modf = null;
@@ -1274,7 +1387,10 @@ public class DynmapModScraper
                     TreeSet<Integer> keys = new TreeSet<Integer>(aliases.biomemap.keySet());
                     for (Integer id : keys) {
                         BiomeGenBase bio = BiomeGenBase.biomeList[id];
+                        if (bio == null) continue;
                         String sym = aliases.biomemap.get(id);
+                        if (sym == null) continue;
+                        aliases.used.add(sym);  // Mark symbol as used
                         String line = String.format("biome:id=%s,grassColorMult=1%06X,foliageColorMult=1%06X,waterColorMult=%06X",
                                 sym, bio.getBiomeGrassColor() & 0xFFFFFF, bio.getBiomeFoliageColor() & 0xFFFFFF, bio.getWaterColorMultiplier() & 0xFFFFFF);
                         txtlines.add("# " + sym);
@@ -1303,7 +1419,8 @@ public class DynmapModScraper
                             lastid = trec.id;
                             String idstr = getBlockID(trec.id, aliases);
                             String c = blkComments.get(trec.id);
-                            if (c != null) {
+                            txtlines.add("");
+                           if (c != null) {
                                 txtlines.add("# " + idstr + c);
                             }
                             if (trec.comment != null) {
@@ -1329,34 +1446,24 @@ public class DynmapModScraper
                         }
                     }
                 }
+                // Write any pipe records
+                List<PipeRecord> plist = pipeRecsByMod.get(mod);
+                if ((plist != null) && (plist.isEmpty() == false)) {
+                    txtlines.add("# BuildCraft pipes");
+                    for (PipeRecord pr : plist) {
+                        txtlines.add("addtotexturemap:mapid=PIPES,key:" + getItemID(pr.itemid, aliases) + "=0:" + 
+                                pr.iconid);
+                    }
+                    txtlines.add("");
+                }
+                
                 txt = new FileWriter(new File(datadir, fixFileName(mod) + "-texture.txt"));
                 txt.write("# " + mod + " " + modver + "\n");
                 txt.write("version:" + MCVERSIONLIMIT + "\n");
-                txt.write("modname:" + mod + "\n\n");
+                txt.write("modname:" + fullModIdByLowerCase.get(mod.toLowerCase()) + "\n\n");
                 if (aliases.used.isEmpty() == false) {
                     int cnt = 0;
                     for (String s : aliases.used) {
-                        if (cnt == 0) {
-                            txt.write("var:");
-                        }
-                        else {
-                            txt.write(",");
-                        }
-                        txt.write(s + "=0");
-                        cnt++;
-                        if (cnt == 10) {
-                            txt.write("\n");
-                            cnt = 0;
-                        }
-                    }
-                    if (cnt > 0) {
-                        txt.write("\n");
-                    }
-                    txt.write("\n");
-                }
-                if (aliases.biomemap.isEmpty() == false) {
-                    int cnt = 0;
-                    for (String s : aliases.biomemap.values()) {
                         if (cnt == 0) {
                             txt.write("var:");
                         }
@@ -1467,7 +1574,7 @@ public class DynmapModScraper
                     modf = new FileWriter(new File(datadir, fixFileName(mod) + "-models.txt"));
                     modf.write("# " + mod + " " + modver + "\n");
                     modf.write("version:" + MCVERSIONLIMIT + "\n");
-                    modf.write("modname:" + mod + "\n\n");
+                    modf.write("modname:" + fullModIdByLowerCase.get(mod.toLowerCase()) + "\n\n");
                     if (aliases.used.isEmpty() == false) {
                         int cnt = 0;
                         for (String s : aliases.used) {
@@ -1529,5 +1636,54 @@ public class DynmapModScraper
         }
         // Restore graphics level
         Block.leaves.setGraphicsLevel(savedGraphicsLevel);
+    }
+    
+    private void processItems() {
+        log.info("Checking for special items");
+        Class<?> pipecls = null;
+        try {
+            pipecls = Class.forName("buildcraft.transport.ItemPipe");
+            log.info("BuildCraft pipe class found");
+        } catch (ClassNotFoundException cnfx) {
+            log.info("BuildCraft pipe class not found");
+        }
+        ModuleCtx ctx = new ModuleCtx();
+        
+        for (int itemid = 256; itemid < Item.itemsList.length; itemid++) {
+            Item itm = Item.itemsList[itemid];
+            if (itm == null) continue;
+            ctx.reset();
+            String[] ui = modblockbyid.get(itemid);
+            if (ui != null) {
+                ctx.recmod = normalizeModID(ui[0]);
+                ctx.bname = ui[1];
+            }
+            if ((pipecls != null) && pipecls.isAssignableFrom(itm.getClass())) {
+                Icon ico = itm.getIconFromDamage(0);
+                if (ico != null) {
+                    String id = handleIcon(ico, ctx);   // Handle the icon
+                    PipeRecord pr = new PipeRecord();
+                    pr.itemid = itemid;
+                    pr.iconid = id;
+                    if (ctx.recmod != null) {
+                        // Add pipe record
+                        ArrayList<PipeRecord> prl = pipeRecsByMod.get(ctx.recmod);
+                        if (prl == null) {
+                            prl = new ArrayList<PipeRecord>();
+                            pipeRecsByMod.put(ctx.recmod, prl);
+                        }
+                        prl.add(pr);
+                        // Add reference to icon
+                        HashSet<String> txtref = texIDByMod.get(ctx.recmod);
+                        if (txtref == null) {
+                            txtref = new HashSet<String>();
+                            texIDByMod.put(ctx.recmod, txtref);
+                        }
+                        txtref.add(id);
+                    }
+                }
+            }
+        }
+        log.info("Checking for special items completed");
     }
 }

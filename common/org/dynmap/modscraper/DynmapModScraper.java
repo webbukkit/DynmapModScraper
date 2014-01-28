@@ -1,5 +1,7 @@
 package org.dynmap.modscraper;
 
+import cpw.mods.fml.client.registry.ISimpleBlockRenderingHandler;
+import cpw.mods.fml.client.registry.RenderingRegistry;
 import cpw.mods.fml.common.Loader;
 import cpw.mods.fml.common.Mod;
 import cpw.mods.fml.common.ModContainer;
@@ -62,6 +64,8 @@ public class DynmapModScraper
     
     public static final String MCVERSIONLIMIT = "1.5";
     
+    public static final String RENDERER_MAPPING = "renderermapping";
+    
     // The instance of your mod that Forge uses.
     @Instance("DynmapModScraper")
     public static DynmapModScraper instance;
@@ -80,6 +84,7 @@ public class DynmapModScraper
     private static HashMap<String, String> suffixByMod = new HashMap<String, String>();
     private static HashMap<String, String> biomeSectionsByMod = new HashMap<String, String>();
     private static HashMap<String, String> itemSectionsByMod = new HashMap<String, String>();
+    private static HashMap<String, RendererType> renderTypeByClass = new HashMap<String, RendererType>();
     
     public static void crash(Exception x, String msg) {
         CrashReport crashreport = CrashReport.makeCrashReport(x, msg);
@@ -316,6 +321,8 @@ public class DynmapModScraper
         return id;
     }
     
+    private Configuration modcfg;
+    
     @PreInit
     public void preInit(FMLPreInitializationEvent event)
     {
@@ -344,11 +351,13 @@ public class DynmapModScraper
                 }
             }
         }
+        renderTypeByClass.clear();
+        
         // Load configuration file - use suggested (config/DynmapModScraper.cfg)
-        Configuration cfg = new Configuration(cfgf);
+        modcfg = new Configuration(cfgf);
         try
         {
-            cfg.load();
+            modcfg.load();
             good_init = true;
             Set<String> mods = Loader.instance().getIndexedModList().keySet();
             Set<String> donemods = new HashSet<String>();
@@ -367,29 +376,40 @@ public class DynmapModScraper
                 if (f.exists() == false) {
                     cfgfile = "";
                 }
-                cfgfile = cfg.get("ConfigFiles", mod, cfgfile).getString();
+                cfgfile = modcfg.get("ConfigFiles", mod, cfgfile).getString();
                 if ((cfgfile != null) && (cfgfile.length() > 0)) {
                     cfgfileByMod.put(mod, cfgfile);
                 }
                 String sections[] = { Configuration.CATEGORY_BLOCK };
-                sections = cfg.get("BlockSections", mod, sections).getStringList();
+                sections = modcfg.get("BlockSections", mod, sections).getStringList();
                 sectionsByMod.put(mod, sections);
                 
-                String prefix = cfg.get("IDPrefix", mod, "").getString();
+                String prefix = modcfg.get("IDPrefix", mod, "").getString();
                 if (prefix.length() > 0) {
                     prefixByMod.put(mod, prefix);
                 }
-                String suffix = cfg.get("IDSuffix", mod, "").getString();
+                String suffix = modcfg.get("IDSuffix", mod, "").getString();
                 if (suffix.length() > 0) {
                     suffixByMod.put(mod, suffix);
                 }
-                String biomes = cfg.get("BiomeSection", mod, "").getString();
+                String biomes = modcfg.get("BiomeSection", mod, "").getString();
                 if (biomes.length() > 0) {
                     biomeSectionsByMod.put(mod, biomes);
                 }
-                String items = cfg.get("ItemSection", mod, "item").getString();
+                String items = modcfg.get("ItemSection", mod, "item").getString();
                 if (items.length() > 0) {
                     itemSectionsByMod.put(mod, items);
+                }
+            }
+            // Get renderer mappings
+            ConfigCategory rendmap = modcfg.getCategory(RENDERER_MAPPING);
+            if (rendmap != null) {
+                for (String k : rendmap.keySet()) {
+                    Property p = rendmap.get(k);
+                    String tgt = p.getString();
+                    if ((tgt != null) && (RendererType.valueOf(tgt) != null)) {
+                        renderTypeByClass.put(k, RendererType.valueOf(tgt));
+                    }
                 }
             }
         }
@@ -399,7 +419,7 @@ public class DynmapModScraper
         }
         finally
         {
-            cfg.save();
+            modcfg.save();
         }
     }
     private static final String ILLEGAL_CHARACTERS = "/\n\r\t\0\f`?*\\<>|\":";
@@ -801,6 +821,45 @@ public class DynmapModScraper
         return id;
     }
     
+    private HashMap<Integer, String> rendererclasses = new HashMap<Integer, String>();
+    
+    @SuppressWarnings("unchecked")
+    private void getRendererClasses() {
+        rendererclasses.clear();
+        @SuppressWarnings("deprecation")
+        RenderingRegistry rr = RenderingRegistry.instance();
+        Field blockRenderer = null;
+        Map<Integer, ISimpleBlockRenderingHandler> blockRenderers = null;
+        try {
+            blockRenderer = RenderingRegistry.class.getDeclaredField("blockRenderers");
+            blockRenderer.setAccessible(true);
+            blockRenderers = (Map<Integer, ISimpleBlockRenderingHandler>) blockRenderer.get(rr);
+        } catch (Exception e) {
+            log.warning("Error while trying to identify renderers - " + e.getMessage());
+        }
+        if (blockRenderers == null) {
+            log.warning("blockRenderers = null");
+            return;
+        }
+        boolean did_add = false;
+        for (Integer id : blockRenderers.keySet()) {
+            String n = blockRenderers.get(id).getClass().getName();
+            if (rendererclasses.containsKey(id) == false) { // Not existing one?
+                rendererclasses.put(id, n);
+                modcfg.get(RENDERER_MAPPING, n, RendererType.CUSTOM.name());
+                did_add = true;
+            }
+        }
+        if (did_add) {
+            modcfg.save();
+        }
+    }
+    public String getRendererByID(int id) {
+        String n = rendererclasses.get(id);
+        if (n == null) n = "";
+        return n;
+    }
+    
     @SuppressWarnings("unchecked")
     @ServerStarted
     public void serverStarted(FMLServerStartingEvent event)
@@ -814,7 +873,9 @@ public class DynmapModScraper
         modRecsByMod.clear();
         pipeRecsByMod.clear();
         modblockbyid.clear();
-        
+        // Get renderer classes
+        getRendererClasses();
+
         if (!good_init) {
             crash("preInit failed - aborting load()");
             return;
@@ -857,12 +918,19 @@ public class DynmapModScraper
             int rid = b.getRenderType();
             ctx.bname = b.getUnlocalizedName();
             RendererType rt = RendererType.byID(rid);
+            String rclass = getRendererByID(rid);
+            // Check if mapping for render class
+            RendererType mappedrt = renderTypeByClass.get(rclass);
+            if (mappedrt != null) {
+                rt = mappedrt;
+            }
+
             String[] ui = modblockbyid.get(id);
             if (ui != null) {
                 ctx.recmod = normalizeModID(ui[0]);
                 ctx.bname = ui[1];
             }
-            String blockline = "Block: id=" + id + ", class=" + b.getClass().getName() + ", renderer=" + rid + "(" + rt + "), isOpaqueCube=" + b.isOpaqueCube() + ", name=" + b.getLocalizedName() + "(" + ctx.bname + ")\n";
+            String blockline = "Block: id=" + id + ", class=" + b.getClass().getName() + ", renderer=" + rclass + "(" + rt + "), isOpaqueCube=" + b.isOpaqueCube() + ", name=" + b.getLocalizedName() + "(" + ctx.bname + ")\n";
 
             for (int meta = 0; meta < 16; meta++) {
                 // Build fake block access context for this block
@@ -954,6 +1022,7 @@ public class DynmapModScraper
                     int[] sideidx = { cmult, cmult, cmult, cmult, cmult, cmult };  // Default side indexes
                     switch (rt) {
                         case STANDARD:
+                        case CUSTOM:    // Assume standard for custom (best guess)
                             if (!b.isOpaqueCube()) { // Not simple cube                                    trec.setTransparency(Transparency.TRANSPARENT); // Transparent
                                 /* Model record for cuboid */
                                 mrec = new ModelRecord(id, meta, b);
@@ -989,6 +1058,10 @@ public class DynmapModScraper
                                 //- assume transparent texture behavior if not render pass 0
                                 else if ((b.getRenderBlockPass() > 0) && (cmult == 0)) {
                                     sideidx = new int[] { 12000, 12000, 12000, 12000, 12000, 12000 };
+                                }
+                                // Add placeholder model reocrd
+                                if (rt == RendererType.CUSTOM) {
+                                    mrec = new ModelRecord(id, meta, b);
                                 }
                             }
                             addallsides = true; // And add all standard sides
@@ -1313,7 +1386,6 @@ public class DynmapModScraper
                             break;
                         default:    // Unhandled cases: need models but we don't know which yet
                             log.warning("Using unsupported standard renderer in " + ctx.recmod + ": " + rt.toString());
-                        case CUSTOM:
                             trec.setTransparency(Transparency.TRANSPARENT); // Assume transparent
                             /* Model record for cuboid */
                             mrec = new ModelRecord(id, meta, b);
@@ -1331,7 +1403,7 @@ public class DynmapModScraper
 
                     if (blockline != null) {
                         blockline = null;
-                        blkComments.put(id, ":* (" + ctx.bname + "), render=" + rid + "(" + rt + "), opaque=" + b.isOpaqueCube() + ",cls=" + b.getClass().getName());
+                        blkComments.put(id, ":* (" + ctx.bname + "), render=" + rclass + "(" + rt + "), opaque=" + b.isOpaqueCube() + ",cls=" + b.getClass().getName());
                     }
 
                     ArrayList<TextureRecord> tlist = txtRecsByMod.get(ctx.recmod);
@@ -1420,7 +1492,7 @@ public class DynmapModScraper
                             String idstr = getBlockID(trec.id, aliases);
                             String c = blkComments.get(trec.id);
                             txtlines.add("");
-                           if (c != null) {
+                            if (c != null) {
                                 txtlines.add("# " + idstr + c);
                             }
                             if (trec.comment != null) {
@@ -1547,6 +1619,7 @@ public class DynmapModScraper
                             String idstr = getBlockID(mrec.id, aliases);
                             lastid = mrec.id;
                             String c = blkComments.get(mrec.id);
+                            modlines.add("");
                             if (c != null) {
                                 modlines.add("# " + idstr + c);
                             }

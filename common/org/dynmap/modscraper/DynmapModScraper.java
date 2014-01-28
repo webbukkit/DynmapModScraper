@@ -642,7 +642,11 @@ public class DynmapModScraper
     }
     
     private int getColorModifier(Block b, int meta) {
-        int rc = b.getRenderColor(meta) & 0xFFFFFF;    // Chec render color multiplier
+        int rc = 0xFFFFFF;
+        try {
+            rc= b.getRenderColor(meta) & 0xFFFFFF;    // Chec render color multiplier
+        } catch (Exception x) { // Some folks don't handle all meta properly
+        }
         if (rc == 0xFFFFFF) {  // None
             return 0;
         }
@@ -965,6 +969,9 @@ public class DynmapModScraper
                     if (x1 > 1.0) { badBox = true; x1 = 1.0; }
                     if (y1 > 1.0) { badBox = true; y1 = 1.0; }
                     if (z1 > 1.0) { badBox = true; z1 = 1.0; }
+                    if (x0 > x1) { badBox = true; x0 = x1; }
+                    if (y0 > y1) { badBox = true; y0 = y1; }
+                    if (z0 > z1) { badBox = true; z0 = z1; }
                 }
 
                 String sides[] = new String[6];

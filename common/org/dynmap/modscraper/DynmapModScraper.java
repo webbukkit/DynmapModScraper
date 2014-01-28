@@ -864,6 +864,12 @@ public class DynmapModScraper
         return n;
     }
     
+    private double clampRange(double v, double min, double max) {
+        if (v < min) v = min;
+        if (v > max) v = max;
+        return v;
+    }
+    
     @SuppressWarnings("unchecked")
     @ServerStarted
     public void serverStarted(FMLServerStartingEvent event)
@@ -963,15 +969,12 @@ public class DynmapModScraper
                 boolean badBox = false;
                 if ((x0 != 0.0) || (y0 != 0.0) || (z0 != 0.0) || (x1 != 1.0) || (y1 != 1.0) || (z1 != 1.0)) {
                     isFull = false;
-                    if (x0 < 0.0) { badBox = true; x0 = 0.0; }
-                    if (y0 < 0.0) { badBox = true; y0 = 0.0; }
-                    if (z0 < 0.0) { badBox = true; z0 = 0.0; }
-                    if (x1 > 1.0) { badBox = true; x1 = 1.0; }
-                    if (y1 > 1.0) { badBox = true; y1 = 1.0; }
-                    if (z1 > 1.0) { badBox = true; z1 = 1.0; }
-                    if (x0 > x1) { badBox = true; x0 = x1; }
-                    if (y0 > y1) { badBox = true; y0 = y1; }
-                    if (z0 > z1) { badBox = true; z0 = z1; }
+                    if (x0 != clampRange(x0, 0.0, 1.0)) { badBox = true; x0 = clampRange(x0, 0.0, 1.0); }
+                    if (y0 != clampRange(y0, 0.0, 1.0)) { badBox = true; y0 = clampRange(y0, 0.0, 1.0); }
+                    if (z0 != clampRange(z0, 0.0, 1.0)) { badBox = true; z0 = clampRange(z0, 0.0, 1.0); }
+                    if (x1 != clampRange(x1, x0+0.0001, 1.0)) { badBox = true; x1 = clampRange(x1, x0+0.0001, 1.0); }
+                    if (y1 != clampRange(y1, y0+0.0001, 1.0)) { badBox = true; y1 = clampRange(y1, y0+0.0001, 1.0); }
+                    if (z1 != clampRange(z1, z0+0.0001, 1.0)) { badBox = true; z1 = clampRange(z1, z0+0.0001, 1.0); }
                 }
 
                 String sides[] = new String[6];

@@ -4,15 +4,14 @@ import cpw.mods.fml.client.registry.ISimpleBlockRenderingHandler;
 import cpw.mods.fml.client.registry.RenderingRegistry;
 import cpw.mods.fml.common.Loader;
 import cpw.mods.fml.common.Mod;
+import cpw.mods.fml.common.Mod.ServerStarting;
 import cpw.mods.fml.common.ModContainer;
 import cpw.mods.fml.common.Mod.Instance;
 import cpw.mods.fml.common.Mod.PreInit;
-import cpw.mods.fml.common.Mod.ServerStarted;
 import cpw.mods.fml.common.SidedProxy;
 import cpw.mods.fml.common.event.FMLPreInitializationEvent;
 import cpw.mods.fml.common.event.FMLServerStartingEvent; 
 import cpw.mods.fml.common.network.NetworkMod;
-import cpw.mods.fml.common.registry.GameRegistry;
 import net.minecraftforge.common.ConfigCategory;
 import net.minecraftforge.common.Configuration;
 import net.minecraftforge.common.ForgeDirection;
@@ -22,6 +21,7 @@ import net.minecraft.block.BlockHalfSlab;
 import net.minecraft.block.BlockLeavesBase;
 import net.minecraft.block.BlockRailBase;
 import net.minecraft.block.material.Material;
+import net.minecraft.client.Minecraft;
 import net.minecraft.crash.CrashReport;
 import net.minecraft.item.Item;
 import net.minecraft.tileentity.TileEntity;
@@ -41,8 +41,6 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
 import java.lang.reflect.Field;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -326,6 +324,8 @@ public class DynmapModScraper
     @PreInit
     public void preInit(FMLPreInitializationEvent event)
     {
+        log = event.getModLog();
+        log.info("DynmapModScraper.preInit()");
         File cfgf = event.getSuggestedConfigurationFile();
         if (cfgf.exists() == false) {
             log.info("Initialize configuration file : " + cfgf.getPath());
@@ -372,31 +372,32 @@ public class DynmapModScraper
                 fullModIdByLowerCase.put(mod.toLowerCase(), fullmod);   // Save full version (for modname:)
                 
                 String cfgfile = "config/" + mod + ".cfg";
-                File f = new File(cfgfile);
+                File f = new File(Minecraft.getMinecraftDir(), cfgfile);
                 if (f.exists() == false) {
                     cfgfile = "";
                 }
-                cfgfile = modcfg.get("ConfigFiles", mod, cfgfile).getString();
+                cfgfile = modcfg.get("configfiles", mod, cfgfile).getString();
                 if ((cfgfile != null) && (cfgfile.length() > 0)) {
                     cfgfileByMod.put(mod, cfgfile);
+                    log.info(mod + "=" + cfgfile);
                 }
                 String sections[] = { Configuration.CATEGORY_BLOCK };
-                sections = modcfg.get("BlockSections", mod, sections).getStringList();
+                sections = modcfg.get("blocksections", mod, sections).getStringList();
                 sectionsByMod.put(mod, sections);
                 
-                String prefix = modcfg.get("IDPrefix", mod, "").getString();
+                String prefix = modcfg.get("idprefix", mod, "").getString();
                 if (prefix.length() > 0) {
                     prefixByMod.put(mod, prefix);
                 }
-                String suffix = modcfg.get("IDSuffix", mod, "").getString();
+                String suffix = modcfg.get("idsuffix", mod, "").getString();
                 if (suffix.length() > 0) {
                     suffixByMod.put(mod, suffix);
                 }
-                String biomes = modcfg.get("BiomeSection", mod, "").getString();
+                String biomes = modcfg.get("biomesection", mod, "").getString();
                 if (biomes.length() > 0) {
                     biomeSectionsByMod.put(mod, biomes);
                 }
-                String items = modcfg.get("ItemSection", mod, "item").getString();
+                String items = modcfg.get("itemsection", mod, "item").getString();
                 if (items.length() > 0) {
                     itemSectionsByMod.put(mod, items);
                 }
@@ -435,8 +436,9 @@ public class DynmapModScraper
         return s;
     }
     
-    private File getModConfigFile(String mod, int idx) {
+    private String getModConfigFile(String mod, int idx) {
         String file = cfgfileByMod.get(mod);
+
         if (file == null) {
             return null;
         }
@@ -444,11 +446,11 @@ public class DynmapModScraper
         if (idx >= files.length) {
             return null;
         }
-        File f = new File(files[idx]);
+        File f = new File(Minecraft.getMinecraftDir(), files[idx]);
         if (f.exists() == false) {
             return null;
         }
-        return f;
+        return file;
     }
     
     private static class IDMapping {
@@ -491,7 +493,7 @@ public class DynmapModScraper
         IDMapping idm = new IDMapping();
         boolean done = false;
         for (int idx = 0; !done; idx++) {
-            File f = getModConfigFile(mod, idx);
+            String f = getModConfigFile(mod, idx);
             if (f == null) {
                 done = true;
             }
@@ -502,8 +504,9 @@ public class DynmapModScraper
         return idm;
     }
     
-    private void processFile(String mod, IDMapping idm, File f) {
+    private void processFile(String mod, IDMapping idm, String filename) {
         Configuration cfg;
+        File f = new File(Minecraft.getMinecraftDir(), filename);
         try {
             cfg = new Configuration(f);
             cfg.load(); // Load it
@@ -586,9 +589,22 @@ public class DynmapModScraper
         }
         String itemsect = itemSectionsByMod.get(mod);
         if (itemsect != null) {
+            seclist.clear();
             ConfigCategory items = cfg.getCategory(itemsect);
-            itemsect = itemsect.replace('.', '/');
             if (items != null) {
+                seclist.add(items);
+            }
+            for (int i = 0; i < seclist.size(); i++) {
+                items = seclist.get(i);
+                for (ConfigCategory child : items.getChildren()) {
+                    if (child != null) {
+                        seclist.add(child);
+                    }
+                }
+                if (items.isEmpty()) {
+                    continue;
+                }
+                itemsect = items.getQualifiedName().replace('.', '/');
                 for (String k : items.keySet()) {
                     Property p = items.get(k);
                     if ((p != null) && p.isIntValue()) {
@@ -870,8 +886,16 @@ public class DynmapModScraper
         return v;
     }
     
+    private int getRenderBlockPass(Block b) {
+        try {
+            return b.getRenderBlockPass();
+        } catch (Exception x) {
+            return 0;
+        }
+    }
+    
     @SuppressWarnings("unchecked")
-    @ServerStarted
+    @ServerStarting
     public void serverStarted(FMLServerStartingEvent event)
     {
         log.info("DynmapMapScraper active");
@@ -895,13 +919,11 @@ public class DynmapModScraper
         
         ImmutableTable<String, String, Integer> modObjectTable = null;
         try {
-            Field f = cpw.mods.fml.common.registry.GameData.class.getField("modObjectTable");
+            Field f = cpw.mods.fml.common.registry.GameData.class.getDeclaredField("modObjectTable");
             f.setAccessible(true);
             modObjectTable = (ImmutableTable<String, String, Integer>) f.get(null);
-        } catch (SecurityException e) {
-        } catch (NoSuchFieldException e) {
-        } catch (IllegalArgumentException e) {
-        } catch (IllegalAccessException e) {
+        } catch (Exception e) {
+            log.info("Error accessing modObjectTable - " + e.getMessage());
         }
         if (modObjectTable == null) {
             crash("failed to find modObjectTable - aborting load()");
@@ -914,7 +936,7 @@ public class DynmapModScraper
         }
         
         HashMap<Integer, String> blkComments = new HashMap<Integer, String>();
-        File datadir = new File("DynmapModScraper");
+        File datadir = new File(Minecraft.getMinecraftDir(), "DynmapModScraper");
         datadir.mkdirs();
         // Process items
         processItems();
@@ -1056,7 +1078,7 @@ public class DynmapModScraper
                                     else {  // Else, full block
                                         mrec = null;
                                         //- assume transparent texture behavior if not render pass 0
-                                        if ((b.getRenderBlockPass() > 0) && (cmult == 0)) {
+                                        if ((getRenderBlockPass(b) > 0) && (cmult == 0)) {
                                             sideidx = new int[] { 12000, 12000, 12000, 12000, 12000, 12000 };
                                         }
                                     }
@@ -1066,7 +1088,7 @@ public class DynmapModScraper
                                 if (b instanceof BlockLeavesBase) {
                                 }
                                 //- assume transparent texture behavior if not render pass 0
-                                else if ((b.getRenderBlockPass() > 0) && (cmult == 0)) {
+                                else if ((getRenderBlockPass(b) > 0) && (cmult == 0)) {
                                     sideidx = new int[] { 12000, 12000, 12000, 12000, 12000, 12000 };
                                 }
                                 // Add placeholder model reocrd
@@ -1566,9 +1588,9 @@ public class DynmapModScraper
                 }
                 boolean match = false;
                 for (int fidx = 0; ; fidx++) {
-                    File cfgfile = getModConfigFile(mod, fidx);
+                    String cfgfile = getModConfigFile(mod, fidx);
                     if (cfgfile != null) {
-                        txt.write("cfgfile:" + cfgfile.getPath() + "\n");
+                        txt.write("cfgfile:" + cfgfile + "\n");
                         match = true;
                     }
                     else {
@@ -1681,9 +1703,9 @@ public class DynmapModScraper
                     }
                     match = false;
                     for (int fidx = 0; ; fidx++) {
-                        File cfgfile = getModConfigFile(mod, fidx);
+                        String cfgfile = getModConfigFile(mod, fidx);
                         if (cfgfile != null) {
-                            modf.write("cfgfile:" + cfgfile.getPath() + "\n");
+                            modf.write("cfgfile:" + cfgfile + "\n");
                             match = true;
                         }
                         else {

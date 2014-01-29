@@ -22,6 +22,7 @@ import net.minecraft.block.BlockHalfSlab;
 import net.minecraft.block.BlockLeavesBase;
 import net.minecraft.block.BlockRailBase;
 import net.minecraft.block.material.Material;
+import net.minecraft.client.Minecraft;
 import net.minecraft.crash.CrashReport;
 import net.minecraft.item.Item;
 import net.minecraft.tileentity.TileEntity;
@@ -41,8 +42,6 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
 import java.lang.reflect.Field;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -432,7 +431,7 @@ public class DynmapModScraper
         return s;
     }
     
-    private File getModConfigFile(String mod, int idx) {
+    private String getModConfigFile(String mod, int idx) {
         String file = cfgfileByMod.get(mod);
         if (file == null) {
             return null;
@@ -445,7 +444,7 @@ public class DynmapModScraper
         if (f.exists() == false) {
             return null;
         }
-        return f;
+        return file;
     }
     
     private static class IDMapping {
@@ -488,7 +487,7 @@ public class DynmapModScraper
         IDMapping idm = new IDMapping();
         boolean done = false;
         for (int idx = 0; !done; idx++) {
-            File f = getModConfigFile(mod, idx);
+            String f = getModConfigFile(mod, idx);
             if (f == null) {
                 done = true;
             }
@@ -499,8 +498,9 @@ public class DynmapModScraper
         return idm;
     }
     
-    private void processFile(String mod, IDMapping idm, File f) {
+    private void processFile(String mod, IDMapping idm, String filename) {
         Configuration cfg;
+        File f = new File(Minecraft.getMinecraft().mcDataDir, filename);
         try {
             cfg = new Configuration(f);
             cfg.load(); // Load it
@@ -1540,9 +1540,9 @@ public class DynmapModScraper
                 }
                 boolean match = false;
                 for (int fidx = 0; ; fidx++) {
-                    File cfgfile = getModConfigFile(mod, fidx);
+                    String cfgfile = getModConfigFile(mod, fidx);
                     if (cfgfile != null) {
-                        txt.write("cfgfile:" + cfgfile.getPath() + "\n");
+                        txt.write("cfgfile:" + cfgfile + "\n");
                         match = true;
                     }
                     else {
@@ -1655,9 +1655,9 @@ public class DynmapModScraper
                     }
                     match = false;
                     for (int fidx = 0; ; fidx++) {
-                        File cfgfile = getModConfigFile(mod, fidx);
+                        String cfgfile = getModConfigFile(mod, fidx);
                         if (cfgfile != null) {
-                            modf.write("cfgfile:" + cfgfile.getPath() + "\n");
+                            modf.write("cfgfile:" + cfgfile + "\n");
                             match = true;
                         }
                         else {

@@ -11,12 +11,14 @@ import cpw.mods.fml.common.event.FMLServerStartingEvent;
 import cpw.mods.fml.common.registry.GameRegistry;
 import cpw.mods.fml.common.registry.GameRegistry.UniqueIdentifier;
 import net.minecraft.block.Block;
+import net.minecraft.block.BlockLeaves;
 import net.minecraft.block.BlockLeavesBase;
 import net.minecraft.block.BlockRailBase;
-import net.minecraft.block.material.Material;
+import net.minecraft.block.BlockSlab;
 import net.minecraft.crash.CrashReport;
 import net.minecraft.init.Blocks;
 import net.minecraft.tileentity.TileEntity;
+import net.minecraft.util.IIcon;
 import net.minecraft.util.ReportedException;
 import net.minecraft.util.Vec3Pool;
 import net.minecraft.world.ColorizerFoliage;
@@ -50,7 +52,7 @@ public class DynmapModScraper
 {    
     public static Logger log = Logger.getLogger("DynmapModScraper");
     
-    public static final String MCVERSIONLIMIT = "1.6";
+    public static final String MCVERSIONLIMIT = "1.7";
     
     // The instance of your mod that Forge uses.
     @Instance("DynmapModScraper")
@@ -621,6 +623,61 @@ public class DynmapModScraper
             return block.isSideSolid(this, x, y, z, side);
         }
     }
+    
+    private boolean isOpaqueCube(Block b) {
+        return b.func_149662_c();
+    }
+    private String getLocalizedName(Block b) {
+        return b.func_149732_F();
+    }
+    private double getBlockBoundsMinX(Block b) {
+        return b.func_149704_x();
+    }
+    private double getBlockBoundsMinY(Block b) {
+        return b.func_149665_z();
+    }
+    private double getBlockBoundsMinZ(Block b) {
+        return b.func_149706_B();
+    }
+    private double getBlockBoundsMaxX(Block b) {
+        return b.func_149753_y();
+    }
+    private double getBlockBoundsMaxY(Block b) {
+        return b.func_149669_A();
+    }
+    private double getBlockBoundsMaxZ(Block b) {
+        return b.func_149693_C();
+    }
+    private int getRenderBlockPass(Block b) {
+        return b.func_149701_w();
+    }
+    private IIcon getIcon(Block b, IBlockAccess world, int x, int y, int z, int side) {
+        return b.func_149673_e(world, x, y, z, side);
+    }
+    private IIcon getIcon(Block b, int side, int meta) {
+        return b.func_149691_a(side, meta);
+    }
+    private int getRenderColor(Block b, int meta) {
+        return b.func_149741_i(meta);
+    }
+    private boolean isPowered(BlockRailBase b) {
+        return b.func_150050_e();
+    }
+    private BiomeGenBase[] getBiomeGenArray() {
+        return BiomeGenBase.func_150565_n();
+    }
+    private int getBiomeGrassColor(BiomeGenBase b, int x, int y, int z) {
+        return b.func_150558_b(x, y, z);
+    }
+    private int getBiomeFoliageColor(BiomeGenBase b, int x, int y, int z) {
+        return b.func_150571_c(x, y, z);
+    }
+    private boolean getGraphicsLevel(BlockLeaves b) {
+        return b.func_149662_c();
+    }
+    private void setGraphicsLevel(BlockLeaves b, boolean v) {
+        b.func_150122_b(v);
+    }
 
     @EventHandler
     public void serverStarted(FMLServerStartingEvent event)
@@ -631,10 +688,9 @@ public class DynmapModScraper
             crash("preInit failed - aborting load()");
             return;
         }
-        boolean savedGraphicsLevel = !Blocks.leaves.func_149662_c();
-        Blocks.leaves.func_150122_b(true);
-        Blocks.leaves2.func_150122_b(true);
-
+        boolean savedGraphicsLevel = !getGraphicsLevel(Blocks.leaves);
+        setGraphicsLevel(Blocks.leaves, true);
+        setGraphicsLevel(Blocks.leaves2, true);
         
         HashMap<String,String> textures = new HashMap<String,String>(); // ID by name
         HashMap<String,HashSet<String>> texIDByMod = new HashMap<String,HashSet<String>>(); // IDs by mod
@@ -656,14 +712,14 @@ public class DynmapModScraper
                 recmod = ui.modId;
                 bname = ui.name;
             }
-            String blockline = "Block: id=" + id + ", class=" + b.getClass().getName() + ", renderer=" + rid + "(" + rt + "), isOpaqueCube=" + b.isOpaqueCube() + ", name=" + b.getLocalizedName() + "(" + bname + ")\n";
+            String blockline = "Block: id=" + id + ", class=" + b.getClass().getName() + ", renderer=" + rid + "(" + rt + "), isOpaqueCube=" + isOpaqueCube(b) + ", name=" + getLocalizedName(b) + "(" + bname + ")\n";
 
-            double x0  = b.getBlockBoundsMinX();
-            double y0  = b.getBlockBoundsMinY();
-            double z0  = b.getBlockBoundsMinZ();
-            double x1  = b.getBlockBoundsMaxX();
-            double y1  = b.getBlockBoundsMaxY();
-            double z1  = b.getBlockBoundsMaxZ();
+            double x0  = getBlockBoundsMinX(b);
+            double y0  = getBlockBoundsMinY(b);
+            double z0  = getBlockBoundsMinZ(b);
+            double x1  = getBlockBoundsMaxX(b);
+            double y1  = getBlockBoundsMaxY(b);
+            double z1  = getBlockBoundsMaxZ(b);
 
             boolean isFull = true;
             boolean badBox = false;
@@ -684,34 +740,31 @@ public class DynmapModScraper
                 String sides[] = new String[6];
                 boolean hit = false;
                 for (int side = 0; side < 6; side++) {
-                    Icon ico = null;
+                    IIcon ico = null;
                     try {
                         if (rt == RendererType.DOOR) {    // Door is special : need to hack world data to make it look like stacked blocks
                             FakeBlockAccess fba = new FakeBlockAccess();
-                            fba.id[FakeBlockAccess.Y_AT] = id;
+                            fba.blk[FakeBlockAccess.Y_AT] = b;
                             fba.data[FakeBlockAccess.Y_AT] = meta;
-                            fba.mat[FakeBlockAccess.Y_AT] = b.blockMaterial;
                             if (side == 0) {    // Force to top
                                 fba.data[FakeBlockAccess.Y_AT] = 8;
-                                fba.id[FakeBlockAccess.Y_BELOW] = id;
+                                fba.blk[FakeBlockAccess.Y_BELOW] = b;
                                 fba.data[FakeBlockAccess.Y_BELOW] = 0;
-                                fba.mat[FakeBlockAccess.Y_BELOW] = b.blockMaterial;
                             }
                             else if (side == 1) { // Force to bottom
                                 fba.data[FakeBlockAccess.Y_AT] = 0;
-                                fba.id[FakeBlockAccess.Y_ABOVE] = id;
+                                fba.blk[FakeBlockAccess.Y_ABOVE] = b;
                                 fba.data[FakeBlockAccess.Y_ABOVE] = 8;
-                                fba.mat[FakeBlockAccess.Y_ABOVE] = b.blockMaterial;
                             }
                             if (side < 2) {
-                                ico = b.getBlockTexture(fba, FakeBlockAccess.FIXEDX, FakeBlockAccess.FIXEDY, FakeBlockAccess.FIXEDZ, 2);
+                                ico = getIcon(b, fba, FakeBlockAccess.FIXEDX, FakeBlockAccess.FIXEDY, FakeBlockAccess.FIXEDZ, 2);
                             }
                             else {
                                 ico = null;
                             }
                         }
                         else {
-                            ico = b.getIcon(side, meta);
+                            ico = getIcon(b, side, meta);
                         }
                     } catch (Exception x) {
                         // Some mods don't like undefined sides to be requuested
@@ -745,15 +798,15 @@ public class DynmapModScraper
                     }
                     int cmult = getColorModifier(b, meta);  // Get color multiplier
                     if (cmult == 17000) {
-                        trec.colormult = b.getRenderColor(meta);
+                        trec.colormult = getRenderColor(b, meta);
                     }
                     int[] sideidx = { cmult, cmult, cmult, cmult, cmult, cmult };  // Default side indexes
                     switch (rt) {
                         case STANDARD:
-                            if (!b.isOpaqueCube()) { // Not simple cube                                    trec.setTransparency(Transparency.TRANSPARENT); // Transparent
+                            if (!isOpaqueCube(b)) { // Not simple cube                                    trec.setTransparency(Transparency.TRANSPARENT); // Transparent
                                 /* Model record for cuboid */
                                 mrec = new ModelRecord(id, meta, b);
-                                if (b instanceof BlockHalfSlab) {   // Slab block?
+                                if (b instanceof BlockSlab) {   // Slab block?
                                     if (meta < 8) { // Bottpm?
                                         mrec.setLine("boxblock", "ymax=0.5");
                                     }
@@ -773,7 +826,7 @@ public class DynmapModScraper
                                     else {  // Else, full block
                                         mrec = null;
                                         //- assume transparent texture behavior if not render pass 0
-                                        if ((b.getRenderBlockPass() > 0) && (cmult == 0)) {
+                                        if ((getRenderBlockPass(b) > 0) && (cmult == 0)) {
                                             sideidx = new int[] { 12000, 12000, 12000, 12000, 12000, 12000 };
                                         }
                                     }
@@ -783,7 +836,7 @@ public class DynmapModScraper
                                 if (b instanceof BlockLeavesBase) {
                                 }
                                 //- assume transparent texture behavior if not render pass 0
-                                else if ((b.getRenderBlockPass() > 0) && (cmult == 0)) {
+                                else if ((getRenderBlockPass(b) > 0) && (cmult == 0)) {
                                     sideidx = new int[] { 12000, 12000, 12000, 12000, 12000, 12000 };
                                 }
                             }
@@ -910,7 +963,7 @@ public class DynmapModScraper
                             // Model record for rail patches
                             mrec = new ModelRecord(id, meta, b);
                             int mask = 0xF;
-                            if (((BlockRailBase)b).isPowered()) {
+                            if (isPowered((BlockRailBase) b)) {
                                 mask = 0x7;
                             }
                             switch (meta & mask) {
@@ -1127,7 +1180,7 @@ public class DynmapModScraper
 
                     if (blockline != null) {
                         blockline = null;
-                        blkComments.put(id, ":* (" + bname + "), render=" + rid + "(" + rt + "), opaque=" + b.isOpaqueCube() + ",cls=" + b.getClass().getName());
+                        blkComments.put(id, ":* (" + bname + "), render=" + rid + "(" + rt + "), opaque=" + isOpaqueCube(b) + ",cls=" + b.getClass().getName());
                     }
 
                     ArrayList<TextureRecord> tlist = txtRecsByMod.get(recmod);
@@ -1180,10 +1233,11 @@ public class DynmapModScraper
                 if (aliases.biomemap.isEmpty() == false) {
                     TreeSet<Integer> keys = new TreeSet<Integer>(aliases.biomemap.keySet());
                     for (Integer id : keys) {
-                        BiomeGenBase bio = BiomeGenBase.biomeList[id];
+                        BiomeGenBase bio = getBiomeGenArray()[id];
+                        if (bio == null) continue;
                         String sym = aliases.biomemap.get(id);
                         String line = String.format("biome:id=%s,grassColorMult=1%06X,foliageColorMult=1%06X,waterColorMult=%06X",
-                                sym, bio.getBiomeGrassColor() & 0xFFFFFF, bio.getBiomeFoliageColor() & 0xFFFFFF, bio.getWaterColorMultiplier() & 0xFFFFFF);
+                            sym, getBiomeGrassColor(bio, 0, 32, 0) & 0xFFFFFF, getBiomeFoliageColor(bio, 0, 32, 0) & 0xFFFFFF, bio.getWaterColorMultiplier() & 0xFFFFFF);
                         txtlines.add("# " + sym);
                         txtlines.add(line);
                     }
@@ -1417,6 +1471,7 @@ public class DynmapModScraper
             
         }
         // Restore graphics level
-        Block.leaves.setGraphicsLevel(savedGraphicsLevel);
+        setGraphicsLevel(Blocks.leaves, savedGraphicsLevel);
+        setGraphicsLevel(Blocks.leaves2, savedGraphicsLevel);
     }
 }

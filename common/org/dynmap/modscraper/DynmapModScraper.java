@@ -316,6 +316,45 @@ public class DynmapModScraper
         }
         return id;
     }
+
+    private Map<String, Map<String, Integer>> uniqueBlockMap = new HashMap<String, Map<String, Integer>>();
+    private Map<String, Map<String, Integer>> uniqueItemMap = new HashMap<String, Map<String, Integer>>();
+    
+    private void initializeBlockUniqueIDMap() {
+        uniqueBlockMap.clear();
+        for (int i = 0; i < Block.blocksList.length; i++) {
+            Block b = Block.blocksList[i];
+            if (b == null) continue;
+            UniqueIdentifier ui = GameRegistry.findUniqueIdentifierFor(b);
+            if (ui != null) {
+                String modid = normalizeModID(ui.modId);
+                Map<String, Integer> mm = uniqueBlockMap.get(modid);
+                if (mm == null) {
+                    mm = new HashMap<String, Integer>();
+                    uniqueBlockMap.put(modid, mm);
+                }
+                mm.put(ui.name, i);
+            }
+        }
+    }
+
+    private void initializeItemUniqueIDMap() {
+        uniqueItemMap.clear();
+        for (int i = 0; i < Item.itemsList.length; i++) {
+            Item itm = Item.itemsList[i];
+            if (itm == null) continue;
+            UniqueIdentifier ui = GameRegistry.findUniqueIdentifierFor(itm);
+            if (ui != null) {
+                String modid = normalizeModID(ui.modId);
+                Map<String, Integer> mm = uniqueItemMap.get(modid);
+                if (mm == null) {
+                    mm = new HashMap<String, Integer>();
+                    uniqueItemMap.put(modid, mm);
+                }
+                mm.put(ui.name, i);
+            }
+        }
+    }
     
     private Configuration modcfg;
     
@@ -485,6 +524,21 @@ public class DynmapModScraper
     
     private IDMapping getBlockIDMappingForMod(String mod) {
         IDMapping idm = new IDMapping();
+        // Get block unique ID map
+        Map<String, Integer> blkmap = uniqueBlockMap.get(mod);
+        if (blkmap != null) {
+            for (String k : blkmap.keySet()) {
+                idm.map.put(blkmap.get(k), "%" + k);
+            }
+        }
+        // Get item unique ID map
+        Map<String, Integer> itmmap = uniqueItemMap.get(mod);
+        if (itmmap != null) {
+            for (String k : itmmap.keySet()) {
+                idm.itemmap.put(itmmap.get(k), "&" + k);
+            }
+        }
+        
         boolean done = false;
         for (int idx = 0; !done; idx++) {
             String f = getModConfigFile(mod, idx);
@@ -879,7 +933,11 @@ public class DynmapModScraper
         pipeRecsByMod.clear();
         // Get renderer classes
         getRendererClasses();
-
+        // Get block unique IDs
+        initializeBlockUniqueIDMap();
+        // Get item unique IDs
+        initializeItemUniqueIDMap();
+        
         if (!good_init) {
             crash("preInit failed - aborting load()");
             return;
@@ -1520,6 +1578,9 @@ public class DynmapModScraper
                 if (aliases.used.isEmpty() == false) {
                     int cnt = 0;
                     for (String s : aliases.used) {
+                        if ((s.charAt(0) == '%') || (s.charAt(0) == '&')) {
+                            continue;
+                        }
                         if (cnt == 0) {
                             txt.write("var:");
                         }
@@ -1635,6 +1696,9 @@ public class DynmapModScraper
                     if (aliases.used.isEmpty() == false) {
                         int cnt = 0;
                         for (String s : aliases.used) {
+                            if ((s.charAt(0) == '%') || (s.charAt(0) == '&')) {
+                                continue;
+                            }
                             if (cnt == 0) {
                                 modf.write("var:");
                             }

@@ -1,7 +1,7 @@
 /bin
 /build
 /lib
-Dynmap-*.jar
+DynmapModScraper-*.jar
 .classpath
 /eclipse
 /.gradle

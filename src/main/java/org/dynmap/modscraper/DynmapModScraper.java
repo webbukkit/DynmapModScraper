@@ -1,5 +1,7 @@
 package org.dynmap.modscraper;
 
+import cpw.mods.fml.client.registry.ISimpleBlockRenderingHandler;
+import cpw.mods.fml.client.registry.RenderingRegistry;
 import cpw.mods.fml.common.Loader;
 import cpw.mods.fml.common.Mod;
 import cpw.mods.fml.common.ModContainer;
@@ -15,8 +17,10 @@ import net.minecraft.block.BlockLeaves;
 import net.minecraft.block.BlockLeavesBase;
 import net.minecraft.block.BlockRailBase;
 import net.minecraft.block.BlockSlab;
+import net.minecraft.client.Minecraft;
 import net.minecraft.crash.CrashReport;
 import net.minecraft.init.Blocks;
+import net.minecraft.item.Item;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.IIcon;
 import net.minecraft.util.ReportedException;
@@ -37,6 +41,7 @@ import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -54,6 +59,8 @@ public class DynmapModScraper
     
     public static final String MCVERSIONLIMIT = "1.7";
     
+    public static final String RENDERER_MAPPING = "renderermapping";
+    
     // The instance of your mod that Forge uses.
     @Instance("DynmapModScraper")
     public static DynmapModScraper instance;
@@ -65,11 +72,14 @@ public class DynmapModScraper
     public boolean good_init = false;
     
     private static HashMap<String, String> modIdByLowerCase = new HashMap<String, String>();
+    private static HashMap<String, String> fullModIdByLowerCase = new HashMap<String, String>();
     private static HashMap<String, String> cfgfileByMod = new HashMap<String, String>();
     private static HashMap<String, String[]> sectionsByMod = new HashMap<String, String[]>();
     private static HashMap<String, String> prefixByMod = new HashMap<String, String>();
     private static HashMap<String, String> suffixByMod = new HashMap<String, String>();
     private static HashMap<String, String> biomeSectionsByMod = new HashMap<String, String>();
+    private static HashMap<String, String> itemSectionsByMod = new HashMap<String, String>();
+    private static HashMap<String, RendererType> renderTypeByClass = new HashMap<String, RendererType>();
     
     public static void crash(Exception x, String msg) {
         CrashReport crashreport = CrashReport.makeCrashReport(x, msg);
@@ -262,6 +272,11 @@ public class DynmapModScraper
         }
     }
     
+    private static class PipeRecord {
+        int itemid; // ID of pipe
+        String iconid;  // Icon ID for pipe
+    }
+    
     public static class StringRun {
         String str;
         int start;
@@ -293,6 +308,55 @@ public class DynmapModScraper
         }
     }
     
+    private String normalizeModID(String id) {
+        int idx = id.indexOf('|');
+        if (idx > 0) {
+            id = id.substring(0, idx);
+        }
+        return id;
+    }
+    
+    private Map<String, Map<String, Integer>> uniqueBlockMap = new HashMap<String, Map<String, Integer>>();
+    private Map<String, Map<String, Integer>> uniqueItemMap = new HashMap<String, Map<String, Integer>>();
+    
+    private void initializeBlockUniqueIDMap() {
+        uniqueBlockMap.clear();
+        for (int i = 0; i < 4096; i++) {
+            Block b = getBlockById(i);
+            if (b == null) continue;
+            UniqueIdentifier ui = GameRegistry.findUniqueIdentifierFor(b);
+            if (ui != null) {
+                String modid = normalizeModID(ui.modId);
+                Map<String, Integer> mm = uniqueBlockMap.get(modid);
+                if (mm == null) {
+                    mm = new HashMap<String, Integer>();
+                    uniqueBlockMap.put(modid, mm);
+                }
+                mm.put(ui.name, i);
+            }
+        }
+    }
+
+    private void initializeItemUniqueIDMap() {
+        uniqueItemMap.clear();
+        for (int i = 0; i < 32000; i++) {
+            Item itm = getItemById(i);
+            if (itm == null) continue;
+            UniqueIdentifier ui = GameRegistry.findUniqueIdentifierFor(itm);
+            if (ui != null) {
+                String modid = normalizeModID(ui.modId);
+                Map<String, Integer> mm = uniqueItemMap.get(modid);
+                if (mm == null) {
+                    mm = new HashMap<String, Integer>();
+                    uniqueItemMap.put(modid, mm);
+                }
+                mm.put(ui.name, i);
+            }
+        }
+    }
+
+    private Configuration modcfg;
+    
     @EventHandler
     public void preInit(FMLPreInitializationEvent event)
     {
@@ -321,42 +385,66 @@ public class DynmapModScraper
                 }
             }
         }
+        renderTypeByClass.clear();
+        
         // Load configuration file - use suggested (config/DynmapModScraper.cfg)
-        Configuration cfg = new Configuration(cfgf);
+        modcfg = new Configuration(cfgf);
         try
         {
-            cfg.load();
+            modcfg.load();
             good_init = true;
             Set<String> mods = Loader.instance().getIndexedModList().keySet();
+            Set<String> donemods = new HashSet<String>();
             for (String mod : mods) {
+                String fullmod = mod;
+                mod = normalizeModID(mod);
+
+                if (donemods.contains(mod)) continue;
+                donemods.add(mod);
+                
                 modIdByLowerCase.put(mod.toLowerCase(), mod); // Add lower case to allow case restore
+                fullModIdByLowerCase.put(mod.toLowerCase(), fullmod);   // Save full version (for modname:)
                 
                 String cfgfile = "config/" + mod + ".cfg";
                 File f = new File(cfgfile);
                 if (f.exists() == false) {
                     cfgfile = "";
                 }
-                cfgfile = cfg.get("ConfigFiles", mod, cfgfile).getString();
+                cfgfile = modcfg.get("ConfigFiles", mod, cfgfile).getString();
                 if ((cfgfile != null) && (cfgfile.length() > 0)) {
                     cfgfileByMod.put(mod, cfgfile);
                 }
                 String sections[] = { "block" };
-                sections = cfg.get("BlockSections", mod, sections).getStringList();
+                sections = modcfg.get("BlockSections", mod, sections).getStringList();
                 sectionsByMod.put(mod, sections);
                 
-                String prefix = cfg.get("IDPrefix", mod, "").getString();
+                String prefix = modcfg.get("IDPrefix", mod, "").getString();
                 if (prefix.length() > 0) {
                     prefixByMod.put(mod, prefix);
                 }
-                String suffix = cfg.get("IDSuffix", mod, "").getString();
+                String suffix = modcfg.get("IDSuffix", mod, "").getString();
                 if (suffix.length() > 0) {
                     suffixByMod.put(mod, suffix);
                 }
-                String biomes = cfg.get("BiomeSection", mod, "").getString();
+                String biomes = modcfg.get("BiomeSection", mod, "").getString();
                 if (biomes.length() > 0) {
                     biomeSectionsByMod.put(mod, biomes);
                 }
-                
+                String items = modcfg.get("ItemSection", mod, "item").getString();
+                if (items.length() > 0) {
+                    itemSectionsByMod.put(mod, items);
+                }
+            }
+            // Get renderer mappings
+            ConfigCategory rendmap = modcfg.getCategory(RENDERER_MAPPING);
+            if (rendmap != null) {
+                for (String k : rendmap.keySet()) {
+                    Property p = rendmap.get(k);
+                    String tgt = p.getString();
+                    if ((tgt != null) && (RendererType.valueOf(tgt) != null)) {
+                        renderTypeByClass.put(k, RendererType.valueOf(tgt));
+                    }
+                }
             }
         }
         catch (Exception e)
@@ -365,7 +453,7 @@ public class DynmapModScraper
         }
         finally
         {
-            cfg.save();
+            modcfg.save();
         }
     }
     private static final String ILLEGAL_CHARACTERS = "/\n\r\t\0\f`?*\\<>|\":";
@@ -381,16 +469,20 @@ public class DynmapModScraper
         return s;
     }
     
-    private File getModConfigFile(String mod) {
+    private String getModConfigFile(String mod, int idx) {
         String file = cfgfileByMod.get(mod);
         if (file == null) {
             return null;
         }
-        File f = new File(file);
+        String[] files = file.split(",");
+        if (idx >= files.length) {
+            return null;
+        }
+        File f = new File(files[idx]);
         if (f.exists() == false) {
             return null;
         }
-        return f;
+        return file;
     }
     
     private static class IDMapping {
@@ -398,6 +490,7 @@ public class DynmapModScraper
         HashSet<String> used = new HashSet<String>();
         boolean missedID;
         Map<Integer, String> biomemap = new HashMap<Integer, String>();
+        Map<Integer, String> itemmap = new HashMap<Integer, String>();
     }
 
     private void loadConfigAsProperties(File f, IDMapping idm) {
@@ -430,24 +523,50 @@ public class DynmapModScraper
     
     private IDMapping getBlockIDMappingForMod(String mod) {
         IDMapping idm = new IDMapping();
-        File f = getModConfigFile(mod);
-        if (f == null) {
-            return idm;
+        // Get block unique ID map
+        Map<String, Integer> blkmap = uniqueBlockMap.get(mod);
+        if (blkmap != null) {
+            for (String k : blkmap.keySet()) {
+                idm.map.put(blkmap.get(k), "%" + k);
+            }
         }
+        // Get item unique ID map
+        Map<String, Integer> itmmap = uniqueItemMap.get(mod);
+        if (itmmap != null) {
+            for (String k : itmmap.keySet()) {
+                idm.itemmap.put(itmmap.get(k), "&" + k);
+            }
+        }
+
+        boolean done = false;
+        for (int idx = 0; !done; idx++) {
+            String f = getModConfigFile(mod, idx);
+            if (f == null) {
+                done = true;
+            }
+            else {
+                processFile(mod, idm, f);
+            }
+        }
+        return idm;
+    }
+    
+    private void processFile(String mod, IDMapping idm, String filename) {
         Configuration cfg;
+        File f = new File(Minecraft.getMinecraft().mcDataDir, filename);
         try {
             cfg = new Configuration(f);
             cfg.load(); // Load it
         } catch (RuntimeException x) {
             // See if property parse works
             loadConfigAsProperties(f, idm);
-            return idm;
+            return;
         }
         String prefix = prefixByMod.get(mod);
         String suffix = suffixByMod.get(mod);
         String[] sections = sectionsByMod.get(mod);
         if (sections == null) {
-            return idm;
+            return;
         }
         ArrayList<ConfigCategory> seclist = new ArrayList<ConfigCategory>();
         for (String s : sections) {
@@ -514,9 +633,31 @@ public class DynmapModScraper
                     }
                 }
             }
-            
         }
-        return idm;
+        String itemsect = itemSectionsByMod.get(mod);
+        if (itemsect != null) {
+            ConfigCategory items = cfg.getCategory(itemsect);
+            itemsect = itemsect.replace('.', '/');
+            if (items != null) {
+                for (String k : items.keySet()) {
+                    Property p = items.get(k);
+                    if ((p != null) && p.isIntValue()) {
+                        int v = p.getInt();
+                        if ((v >= 1) && (v < 32768)) {
+                            k = itemsect + '/' + k;
+                            if (k.startsWith("block/") || itemsect.startsWith("blocks/")) {
+                                k = k.substring(k.indexOf('/') + 1);
+                            }
+                            else if (k.startsWith("item/")) {
+                                k = "item_" + k.substring(5);
+                            }
+                            k = k.replace(' ', '_');
+                            idm.itemmap.put(v, k);
+                        }
+                    }
+                }
+            }
+        }
     }
     
     private static String getBlockID(int id, IDMapping idmap) {
@@ -531,14 +672,31 @@ public class DynmapModScraper
         return s;
     }
 
-    private void prepBlock(Block b) {
+    private static String getItemID(int id, IDMapping idmap) {
+        id = id - 256;  // Standard offset from item ID versus setting
+        String s = idmap.itemmap.get(id);
+        if (s == null) {
+            s = Integer.toString(id);
+            idmap.missedID = true;
+        }
+        else {
+            idmap.used.add(s);
+        }
+        return s;
+    }
+
+    private void prepBlock(Block b, int meta) {
     }
     
-    private void restoreBlock(Block b) {
+    private void restoreBlock(Block b, int meta) {
     }
     
     private int getColorModifier(Block b, int meta) {
-        int rc = b.func_149741_i(meta) & 0xFFFFFF;    // getRenderColor(meta) Chec render color multiplier
+        int rc = 0xFFFFFF;
+        try {
+            rc = b.func_149741_i(meta) & 0xFFFFFF;    // getRenderColor(meta) Chec render color multiplier
+        } catch (Exception x) { // Some folks don't handle all meta properly
+        }
         if (rc == 0xFFFFFF) {  // None
             return 0;
         }
@@ -678,12 +836,127 @@ public class DynmapModScraper
     private void setGraphicsLevel(BlockLeaves b, boolean v) {
         b.func_150122_b(v);
     }
+    private void setBlockBoundsBasedOnState(Block b, IBlockAccess world, int x, int y, int z) {
+        b.func_149719_a(world, x, y, z);
+    }
+    private Item getItemById(int id) {
+        return Item.func_150899_d(id);
+    }
+    private Block getBlockById(int id) {
+        return Block.func_149729_e(id);
+    }
 
+    private static class ModuleCtx {
+        String recmod;
+        String bname;
+        
+        void reset() {
+            recmod = null;
+            bname = null;
+        }
+    }
+    // Texture IDs by name
+    private HashMap<String,String> textures = new HashMap<String,String>();
+    // IDs by mod
+    private HashMap<String,HashSet<String>> texIDByMod = new HashMap<String,HashSet<String>>();
+    // Texture records by mod
+    private HashMap<String, ArrayList<TextureRecord>> txtRecsByMod = new HashMap<String, ArrayList<TextureRecord>>();
+    // Model records by mod
+    private HashMap<String, ArrayList<ModelRecord>> modRecsByMod = new HashMap<String, ArrayList<ModelRecord>>();
+    // Pipe records by mod
+    private HashMap<String, ArrayList<PipeRecord>> pipeRecsByMod = new HashMap<String, ArrayList<PipeRecord>>();
+
+    // Register icon, and update module ID
+    private String handleIcon(IIcon ico, ModuleCtx ctx) {
+        String iconame = ico.getIconName();
+        String[] split = iconame.split(":");
+        String mod, txt;
+        if (split.length == 1) {
+            int idx = iconame.indexOf('/'); // Some mods do this: minecraft base textures are flat
+            if (idx < 0) {
+                mod = "minecraft";
+                txt = split[0];
+            }
+            else {
+                mod = normalizeModID(iconame.substring(0, idx));
+                txt = iconame.substring(idx+1);
+                if (ctx.recmod == null) ctx.recmod = modIdByLowerCase.get(mod.toLowerCase());
+            }
+        }
+        else {
+            mod = normalizeModID(split[0]);
+            txt = split[1];
+            if (ctx.recmod == null) ctx.recmod = modIdByLowerCase.get(mod.toLowerCase());
+        }
+        String id = mod + "/" + txt;
+        textures.put(id, "assets/" + mod.toLowerCase() + "/textures/blocks/" + txt + ".png");
+        
+        return id;
+    }
+    
+    private HashMap<Integer, String> rendererclasses = new HashMap<Integer, String>();
+    
+    @SuppressWarnings("unchecked")
+    private void getRendererClasses() {
+        rendererclasses.clear();
+        @SuppressWarnings("deprecation")
+        RenderingRegistry rr = RenderingRegistry.instance();
+        Field blockRenderer = null;
+        Map<Integer, ISimpleBlockRenderingHandler> blockRenderers = null;
+        try {
+            blockRenderer = RenderingRegistry.class.getDeclaredField("blockRenderers");
+            blockRenderer.setAccessible(true);
+            blockRenderers = (Map<Integer, ISimpleBlockRenderingHandler>) blockRenderer.get(rr);
+        } catch (Exception e) {
+            log.warning("Error while trying to identify renderers - " + e.getMessage());
+        }
+        if (blockRenderers == null) {
+            log.warning("blockRenderers = null");
+            return;
+        }
+        boolean did_add = false;
+        for (Integer id : blockRenderers.keySet()) {
+            String n = blockRenderers.get(id).getClass().getName();
+            if (rendererclasses.containsKey(id) == false) { // Not existing one?
+                rendererclasses.put(id, n);
+                modcfg.get(RENDERER_MAPPING, n, RendererType.CUSTOM.name());
+                did_add = true;
+            }
+        }
+        if (did_add) {
+            modcfg.save();
+        }
+    }
+    public String getRendererByID(int id) {
+        String n = rendererclasses.get(id);
+        if (n == null) n = "";
+        return n;
+    }
+    
+    private double clampRange(double v, double min, double max) {
+        if (v < min) v = min;
+        if (v > max) v = max;
+        return v;
+    }
+    
     @EventHandler
     public void serverStarted(FMLServerStartingEvent event)
     {
         log.info("DynmapMapScraper active");
-        
+
+        // Reset (in case we're reentering SSP server
+        textures.clear();
+        texIDByMod.clear();
+        txtRecsByMod.clear();
+        modRecsByMod.clear();
+        pipeRecsByMod.clear();
+        // Get renderer classes
+        getRendererClasses();
+        // Get block unique IDs
+        initializeBlockUniqueIDMap();
+        // Get item unique IDs
+        initializeItemUniqueIDMap();
+
         if (!good_init) {
             crash("preInit failed - aborting load()");
             return;
@@ -692,58 +965,73 @@ public class DynmapModScraper
         setGraphicsLevel(Blocks.leaves, true);
         setGraphicsLevel(Blocks.leaves2, true);
         
-        HashMap<String,String> textures = new HashMap<String,String>(); // ID by name
-        HashMap<String,HashSet<String>> texIDByMod = new HashMap<String,HashSet<String>>(); // IDs by mod
-        HashMap<String, ArrayList<TextureRecord>> txtRecsByMod = new HashMap<String, ArrayList<TextureRecord>>();
-        HashMap<String, ArrayList<ModelRecord>> modRecsByMod = new HashMap<String, ArrayList<ModelRecord>>();
         HashMap<Integer, String> blkComments = new HashMap<Integer, String>();
         File datadir = new File("DynmapModScraper");
         datadir.mkdirs();
-
+        // Process items
+        processItems();
+        
+        ModuleCtx ctx = new ModuleCtx();
+        // Process blocks
         for (int id = 0; id < 4096; id++) {
             Block b = Block.func_149729_e(id);
             if (b == null) continue;
             int rid = b.func_149645_b(); // getRenderType()
-            String bname = b.func_149739_a();
             RendererType rt = RendererType.byID(rid);
-            String recmod = null;
-            UniqueIdentifier ui = GameRegistry.findUniqueIdentifierFor(b);
-            if (ui != null) {
-                recmod = ui.modId;
-                bname = ui.name;
+            String rclass = getRendererByID(rid);
+            // Check if mapping for render class
+            RendererType mappedrt = renderTypeByClass.get(rclass);
+            if (mappedrt != null) {
+                rt = mappedrt;
             }
-            String blockline = "Block: id=" + id + ", class=" + b.getClass().getName() + ", renderer=" + rid + "(" + rt + "), isOpaqueCube=" + isOpaqueCube(b) + ", name=" + getLocalizedName(b) + "(" + bname + ")\n";
-
-            double x0  = getBlockBoundsMinX(b);
-            double y0  = getBlockBoundsMinY(b);
-            double z0  = getBlockBoundsMinZ(b);
-            double x1  = getBlockBoundsMaxX(b);
-            double y1  = getBlockBoundsMaxY(b);
-            double z1  = getBlockBoundsMaxZ(b);
-
-            boolean isFull = true;
-            boolean badBox = false;
-            if ((x0 != 0.0) || (y0 != 0.0) || (z0 != 0.0) || (x1 != 1.0) || (y1 != 1.0) || (z1 != 1.0)) {
-                blockline += String.format("  bounds=%f.%f,%f:%f,%f,%f\n", x0, y0, z0, x1, y1, z1);
-                isFull = false;
-                if (x0 < 0.0) { badBox = true; x0 = 0.0; }
-                if (y0 < 0.0) { badBox = true; y0 = 0.0; }
-                if (z0 < 0.0) { badBox = true; z0 = 0.0; }
-                if (x1 > 1.0) { badBox = true; x1 = 1.0; }
-                if (y1 > 1.0) { badBox = true; y1 = 1.0; }
-                if (z1 > 1.0) { badBox = true; z1 = 1.0; }
-            }
-            // Prep block for scan
-            prepBlock(b);
             
+            UniqueIdentifier ui = GameRegistry.findUniqueIdentifierFor(b);
+            if ((ui != null) && (ui.modId != null) && (!ui.modId.equals("null"))) {
+                ctx.recmod = normalizeModID(ui.modId);
+                ctx.bname = ui.name;
+            }
+            String blockline = "Block: id=" + id + ", class=" + b.getClass().getName() + ", renderer=" + rclass + "(" + rt + "), isOpaqueCube=" + isOpaqueCube(b) + ", name=" + getLocalizedName(b) + "(" + ctx.bname + ")\n";
+
             for (int meta = 0; meta < 16; meta++) {
+                // Build fake block access context for this block
+                FakeBlockAccess fba = new FakeBlockAccess();
+                fba.blk[FakeBlockAccess.Y_AT] = b;
+                fba.data[FakeBlockAccess.Y_AT] = meta;
+                // Set block bounds based on state 
+                try {
+                    setBlockBoundsBasedOnState(b, fba, FakeBlockAccess.FIXEDX, FakeBlockAccess.FIXEDY, FakeBlockAccess.FIXEDZ);
+                } catch (Exception x) {
+                    // Some blocks don't handle this well - live without it
+                }
+                // Prep block for scan
+                prepBlock(b, meta);
+                
+                // Get bounds for the block
+                double x0  = getBlockBoundsMinX(b);
+                double y0  = getBlockBoundsMinY(b);
+                double z0  = getBlockBoundsMinZ(b);
+                double x1  = getBlockBoundsMaxX(b);
+                double y1  = getBlockBoundsMaxY(b);
+                double z1  = getBlockBoundsMaxZ(b);
+
+                boolean isFull = true;
+                boolean badBox = false;
+                if ((x0 != 0.0) || (y0 != 0.0) || (z0 != 0.0) || (x1 != 1.0) || (y1 != 1.0) || (z1 != 1.0)) {
+                    isFull = false;
+                    if (x0 != clampRange(x0, 0.0, 1.0)) { badBox = true; x0 = clampRange(x0, 0.0, 1.0); }
+                    if (y0 != clampRange(y0, 0.0, 1.0)) { badBox = true; y0 = clampRange(y0, 0.0, 1.0); }
+                    if (z0 != clampRange(z0, 0.0, 1.0)) { badBox = true; z0 = clampRange(z0, 0.0, 1.0); }
+                    if (x1 != clampRange(x1, x0+0.0001, 1.0)) { badBox = true; x1 = clampRange(x1, x0+0.0001, 1.0); }
+                    if (y1 != clampRange(y1, y0+0.0001, 1.0)) { badBox = true; y1 = clampRange(y1, y0+0.0001, 1.0); }
+                    if (z1 != clampRange(z1, z0+0.0001, 1.0)) { badBox = true; z1 = clampRange(z1, z0+0.0001, 1.0); }
+                }
+
                 String sides[] = new String[6];
                 boolean hit = false;
                 for (int side = 0; side < 6; side++) {
                     IIcon ico = null;
                     try {
                         if (rt == RendererType.DOOR) {    // Door is special : need to hack world data to make it look like stacked blocks
-                            FakeBlockAccess fba = new FakeBlockAccess();
                             fba.blk[FakeBlockAccess.Y_AT] = b;
                             fba.data[FakeBlockAccess.Y_AT] = meta;
                             if (side == 0) {    // Force to top
@@ -771,30 +1059,17 @@ public class DynmapModScraper
                     }
                     if (ico != null) {
                         hit = true;
-                        sides[side] = ico.getIconName();
-                        String[] split = sides[side].split(":");
-                        String mod, txt;
-                        if (split.length == 1) {
-                            mod = "minecraft";
-                            txt = split[0];
-                        }
-                        else {
-                            mod = split[0];
-                            txt = split[1];
-                            if (recmod == null) recmod = modIdByLowerCase.get(mod.toLowerCase());
-                        }
-                        textures.put(mod + "/" + txt, "assets/" + mod.toLowerCase() + "/textures/blocks/" + txt + ".png");
-                        sides[side] = mod + "/" + txt;
+                        sides[side] = handleIcon(ico, ctx);
                     }
                 }
-                if (hit && (recmod != null)) {
+                if (hit && (ctx.recmod != null)) {
                     TextureRecord trec = new TextureRecord(id, meta, b);
                     ModelRecord mrec = null;
                     boolean addallsides = false;
-                    HashSet<String> txtref = texIDByMod.get(recmod);
+                    HashSet<String> txtref = texIDByMod.get(ctx.recmod);
                     if (txtref == null) {
                         txtref = new HashSet<String>();
-                        texIDByMod.put(recmod, txtref);
+                        texIDByMod.put(ctx.recmod, txtref);
                     }
                     int cmult = getColorModifier(b, meta);  // Get color multiplier
                     if (cmult == 17000) {
@@ -803,6 +1078,7 @@ public class DynmapModScraper
                     int[] sideidx = { cmult, cmult, cmult, cmult, cmult, cmult };  // Default side indexes
                     switch (rt) {
                         case STANDARD:
+                        case CUSTOM:    // Assume standard for custom (best guess)
                             if (!isOpaqueCube(b)) { // Not simple cube                                    trec.setTransparency(Transparency.TRANSPARENT); // Transparent
                                 /* Model record for cuboid */
                                 mrec = new ModelRecord(id, meta, b);
@@ -838,6 +1114,10 @@ public class DynmapModScraper
                                 //- assume transparent texture behavior if not render pass 0
                                 else if ((getRenderBlockPass(b) > 0) && (cmult == 0)) {
                                     sideidx = new int[] { 12000, 12000, 12000, 12000, 12000, 12000 };
+                                }
+                                // Add placeholder model reocrd
+                                if (rt == RendererType.CUSTOM) {
+                                    mrec = new ModelRecord(id, meta, b);
                                 }
                             }
                             addallsides = true; // And add all standard sides
@@ -1102,7 +1382,6 @@ public class DynmapModScraper
                             trec.addPatch(1, cmult, sides[1]);
                             txtref.add(sides[0]);
                             txtref.add(sides[1]);
-                            //trec.setComment("FIXME: Top texture (patch0) not properly detected: needs to be manually fixed");
                             break;
                         case TORCH:
                             trec.setTransparency(Transparency.TRANSPARENT); // Assume transparent
@@ -1161,8 +1440,7 @@ public class DynmapModScraper
                             txtref.add(sides[2]);
                             break;
                         default:    // Unhandled cases: need models but we don't know which yet
-                            log.warning("Using unsupported standard renderer in " + recmod + ": " + rt.toString());
-                        case CUSTOM:
+                            log.warning("Using unsupported standard renderer in " + ctx.recmod + ": " + rt.toString());
                             trec.setTransparency(Transparency.TRANSPARENT); // Assume transparent
                             /* Model record for cuboid */
                             mrec = new ModelRecord(id, meta, b);
@@ -1180,37 +1458,38 @@ public class DynmapModScraper
 
                     if (blockline != null) {
                         blockline = null;
-                        blkComments.put(id, ":* (" + bname + "), render=" + rid + "(" + rt + "), opaque=" + isOpaqueCube(b) + ",cls=" + b.getClass().getName());
+                        blkComments.put(id, ":* (" + ctx.bname + "), render=" + rclass + "(" + rt + "), opaque=" + isOpaqueCube(b) + ",cls=" + b.getClass().getName());
                     }
 
-                    ArrayList<TextureRecord> tlist = txtRecsByMod.get(recmod);
+                    ArrayList<TextureRecord> tlist = txtRecsByMod.get(ctx.recmod);
                     if (tlist == null) {
                         tlist = new ArrayList<TextureRecord>();
-                        txtRecsByMod.put(recmod,  tlist);
+                        txtRecsByMod.put(ctx.recmod,  tlist);
                     }
                     tlist.add(trec);
                     if (mrec != null) {
-                        ArrayList<ModelRecord> mlist = modRecsByMod.get(recmod);
+                        ArrayList<ModelRecord> mlist = modRecsByMod.get(ctx.recmod);
                         if (mlist == null) {
                             mlist = new ArrayList<ModelRecord>();
-                            modRecsByMod.put(recmod,  mlist);
+                            modRecsByMod.put(ctx.recmod,  mlist);
                         }
                         mlist.add(mrec);
                     }
                 }
+                // Restore block
+                restoreBlock(b, meta);
             }
-            // Restore block
-            restoreBlock(b);
         }
         HashSet<String> mods = new HashSet<String>();
         mods.addAll(txtRecsByMod.keySet());
         mods.addAll(modRecsByMod.keySet());
+        mods.addAll(pipeRecsByMod.keySet());
         mods.remove("minecraft");
         for (String mod : mods) {
+            if (mod == null) continue;
             log.info("Generating files for " + mod);
             FileWriter txt = null;
             FileWriter modf = null;
-            File cfgfile = getModConfigFile(mod);
             IDMapping aliases = getBlockIDMappingForMod(mod);
             String modver = "";
             ModContainer modc = Loader.instance().getIndexedModList().get(mod);
@@ -1223,7 +1502,8 @@ public class DynmapModScraper
                 // Write any texture references
                 HashSet<String> txtlist = texIDByMod.get(mod);
                 if (txtlist != null) {
-                    for (String id : txtlist) {
+                    TreeSet<String> ordered_ids = new TreeSet<String>(txtlist);
+                    for (String id : ordered_ids) {
                         String fname = textures.get(id);
                         txtlines.add("texture:id=" + id + ",filename=" + fname);
                     }
@@ -1236,6 +1516,8 @@ public class DynmapModScraper
                         BiomeGenBase bio = getBiomeGenArray()[id];
                         if (bio == null) continue;
                         String sym = aliases.biomemap.get(id);
+                        if (sym == null) continue;
+                        aliases.used.add(sym);  // Mark symbol as used
                         String line = String.format("biome:id=%s,grassColorMult=1%06X,foliageColorMult=1%06X,waterColorMult=%06X",
                             sym, getBiomeGrassColor(bio, 0, 32, 0) & 0xFFFFFF, getBiomeFoliageColor(bio, 0, 32, 0) & 0xFFFFFF, bio.getWaterColorMultiplier() & 0xFFFFFF);
                         txtlines.add("# " + sym);
@@ -1264,6 +1546,7 @@ public class DynmapModScraper
                             lastid = trec.id;
                             String idstr = getBlockID(trec.id, aliases);
                             String c = blkComments.get(trec.id);
+                            txtlines.add("");
                             if (c != null) {
                                 txtlines.add("# " + idstr + c);
                             }
@@ -1290,13 +1573,27 @@ public class DynmapModScraper
                         }
                     }
                 }
+                // Write any pipe records
+                List<PipeRecord> plist = pipeRecsByMod.get(mod);
+                if ((plist != null) && (plist.isEmpty() == false)) {
+                    txtlines.add("# BuildCraft pipes");
+                    for (PipeRecord pr : plist) {
+                        txtlines.add("addtotexturemap:mapid=PIPES,key:" + getItemID(pr.itemid, aliases) + "=0:" + 
+                                pr.iconid);
+                    }
+                    txtlines.add("");
+                }
+                
                 txt = new FileWriter(new File(datadir, fixFileName(mod) + "-texture.txt"));
                 txt.write("# " + mod + " " + modver + "\n");
                 txt.write("version:" + MCVERSIONLIMIT + "\n");
-                txt.write("modname:" + mod + "\n\n");
+                txt.write("modname:" + fullModIdByLowerCase.get(mod.toLowerCase()) + "\n\n");
                 if (aliases.used.isEmpty() == false) {
                     int cnt = 0;
                     for (String s : aliases.used) {
+                        if ((s.charAt(0) == '%') || (s.charAt(0) == '&')) {
+                            continue;
+                        }
                         if (cnt == 0) {
                             txt.write("var:");
                         }
@@ -1315,31 +1612,19 @@ public class DynmapModScraper
                     }
                     txt.write("\n");
                 }
-                if (aliases.biomemap.isEmpty() == false) {
-                    int cnt = 0;
-                    for (String s : aliases.biomemap.values()) {
-                        if (cnt == 0) {
-                            txt.write("var:");
-                        }
-                        else {
-                            txt.write(",");
-                        }
-                        txt.write(s + "=0");
-                        cnt++;
-                        if (cnt == 10) {
-                            txt.write("\n");
-                            cnt = 0;
-                        }
+                boolean match = false;
+                for (int fidx = 0; ; fidx++) {
+                    String cfgfile = getModConfigFile(mod, fidx);
+                    if (cfgfile != null) {
+                        txt.write("cfgfile:" + cfgfile + "\n");
+                        match = true;
                     }
-                    if (cnt > 0) {
-                        txt.write("\n");
+                    else {
+                        break;
                     }
-                    txt.write("\n");
                 }
-                if (cfgfile != null) {
-                    txt.write("cfgfile:" + cfgfile.getPath() + "\n\n");
-                }
-                else {
+                txt.write("\n");
+                if (!match) {
                     txt.write("# Configuration file not found!\n\n");
                     log.warning(mod + "-texture.txt missing configuration file!");
                 }
@@ -1392,6 +1677,7 @@ public class DynmapModScraper
                             String idstr = getBlockID(mrec.id, aliases);
                             lastid = mrec.id;
                             String c = blkComments.get(mrec.id);
+                            modlines.add("");
                             if (c != null) {
                                 modlines.add("# " + idstr + c);
                             }
@@ -1419,10 +1705,13 @@ public class DynmapModScraper
                     modf = new FileWriter(new File(datadir, fixFileName(mod) + "-models.txt"));
                     modf.write("# " + mod + " " + modver + "\n");
                     modf.write("version:" + MCVERSIONLIMIT + "\n");
-                    modf.write("modname:" + mod + "\n\n");
+                    modf.write("modname:" + fullModIdByLowerCase.get(mod.toLowerCase()) + "\n\n");
                     if (aliases.used.isEmpty() == false) {
                         int cnt = 0;
                         for (String s : aliases.used) {
+                            if ((s.charAt(0) == '%') || (s.charAt(0) == '&')) {
+                                continue;
+                            }
                             if (cnt == 0) {
                                 modf.write("var:");
                             }
@@ -1441,10 +1730,19 @@ public class DynmapModScraper
                         }
                         modf.write("\n");
                     }
-                    if (cfgfile != null) {
-                        modf.write("cfgfile:" + cfgfile.getPath() + "\n\n");
+                    match = false;
+                    for (int fidx = 0; ; fidx++) {
+                        String cfgfile = getModConfigFile(mod, fidx);
+                        if (cfgfile != null) {
+                            modf.write("cfgfile:" + cfgfile + "\n");
+                            match = true;
+                        }
+                        else {
+                            break;
+                        }
                     }
-                    else {
+                    modf.write("\n");
+                    if (!match) {
                         modf.write("# Configuration file not found!\n\n");
                         log.warning(mod + "-models.txt missing configuration file!");
                     }
@@ -1473,5 +1771,54 @@ public class DynmapModScraper
         // Restore graphics level
         setGraphicsLevel(Blocks.leaves, savedGraphicsLevel);
         setGraphicsLevel(Blocks.leaves2, savedGraphicsLevel);
+    }
+    
+    private void processItems() {
+        log.info("Checking for special items");
+        Class<?> pipecls = null;
+        try {
+            pipecls = Class.forName("buildcraft.transport.ItemPipe");
+            log.info("BuildCraft pipe class found");
+        } catch (ClassNotFoundException cnfx) {
+            log.info("BuildCraft pipe class not found");
+        }
+        ModuleCtx ctx = new ModuleCtx();
+        
+        for (int itemid = 256; itemid < 32000; itemid++) {
+            Item itm = getItemById(itemid);
+            if (itm == null) continue;
+            ctx.reset();
+            UniqueIdentifier ui = GameRegistry.findUniqueIdentifierFor(itm);
+            if ((ui != null) && (ui.modId != null) && (!ui.modId.equals("null"))) {
+                ctx.recmod = normalizeModID(ui.modId);
+                ctx.bname = ui.name;
+            }
+            if ((pipecls != null) && pipecls.isAssignableFrom(itm.getClass())) {
+                IIcon ico = itm.getIconFromDamage(0);
+                if (ico != null) {
+                    String id = handleIcon(ico, ctx);   // Handle the icon
+                    PipeRecord pr = new PipeRecord();
+                    pr.itemid = itemid;
+                    pr.iconid = id;
+                    if (ctx.recmod != null) {
+                        // Add pipe record
+                        ArrayList<PipeRecord> prl = pipeRecsByMod.get(ctx.recmod);
+                        if (prl == null) {
+                            prl = new ArrayList<PipeRecord>();
+                            pipeRecsByMod.put(ctx.recmod, prl);
+                        }
+                        prl.add(pr);
+                        // Add reference to icon
+                        HashSet<String> txtref = texIDByMod.get(ctx.recmod);
+                        if (txtref == null) {
+                            txtref = new HashSet<String>();
+                            texIDByMod.put(ctx.recmod, txtref);
+                        }
+                        txtref.add(id);
+                    }
+                }
+            }
+        }
+        log.info("Checking for special items completed");
     }
 }

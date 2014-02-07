@@ -359,11 +359,19 @@ public class DynmapModScraper
         {
             modcfg.load();
             good_init = true;
-            Set<String> mods = Loader.instance().getIndexedModList().keySet();
+            Map<String, ModContainer> modmap = Loader.instance().getIndexedModList();
+            Set<String> mods = modmap.keySet();
             Set<String> donemods = new HashSet<String>();
             for (String mod : mods) {
-                String fullmod = mod;
-                mod = normalizeModID(mod);
+                String origmod = mod;
+                String parent = "";
+                ModContainer mc = Loader.instance().getIndexedModList().get(mod);
+                while (!mc.getMetadata().parent.equals("")) {
+                    parent = mc.getMetadata().parent;
+                    mc = modmap.get(parent);
+                }
+                String fullmod = mc.getModId();
+                mod = normalizeModID(fullmod);
 
                 if (donemods.contains(mod)) continue;
                 donemods.add(mod);

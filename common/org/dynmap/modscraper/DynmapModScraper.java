@@ -72,6 +72,7 @@ public class DynmapModScraper
 
     public boolean good_init = false;
     
+    private static HashMap<String, String> parentModIdByModId = new HashMap<String, String>();
     private static HashMap<String, String> modIdByLowerCase = new HashMap<String, String>();
     private static HashMap<String, String> fullModIdByLowerCase = new HashMap<String, String>();
     private static HashMap<String, String> cfgfileByMod = new HashMap<String, String>();
@@ -310,10 +311,9 @@ public class DynmapModScraper
     }
     
     private String normalizeModID(String id) {
-        int idx = id.indexOf('|');
-        if (idx > 0) {
-            id = id.substring(0, idx);
-        }
+        String id2 = parentModIdByModId.get(id);
+        if (id2 != null) id = id2;
+        id = id.replace('|', '_');
         return id;
     }
 
@@ -399,13 +399,14 @@ public class DynmapModScraper
             Set<String> donemods = new HashSet<String>();
             for (String mod : mods) {
                 String origmod = mod;
-                String parent = "";
+                String parent = origmod;
                 ModContainer mc = Loader.instance().getIndexedModList().get(mod);
                 while (!mc.getMetadata().parent.equals("")) {
                     parent = mc.getMetadata().parent;
                     mc = modmap.get(parent);
                 }
                 String fullmod = mc.getModId();
+                parentModIdByModId.put(origmod, parent);
                 mod = normalizeModID(fullmod);
 
                 if (donemods.contains(mod)) continue;

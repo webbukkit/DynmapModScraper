@@ -619,26 +619,39 @@ public class DynmapModScraper
                 }
             }
         }
+        seclist.clear();
         String biomesect = biomeSectionsByMod.get(mod);
         if (biomesect != null) {
-            ConfigCategory biomes = cfg.getCategory(biomesect);
-            biomesect = biomesect.replace('.', '/');
-            if (biomes != null) {
-                for (String k : biomes.keySet()) {
-                    Property p = biomes.get(k);
-                    if ((p != null) && p.isIntValue()) {
-                        int v = p.getInt();
-                        if ((v >= 1) && (v < 256)) {
-                            k = biomesect + '/' + k;
-                            if (k.startsWith("block/") || biomesect.startsWith("blocks/")) {
-                                k = k.substring(k.indexOf('/') + 1);
-                            }
-                            else if (k.startsWith("item/")) {
-                                k = "item_" + k.substring(5);
-                            }
-                            k = k.replace(' ', '_');
-                            idm.biomemap.put(v, k);
+            ConfigCategory bio = cfg.getCategory(biomesect);
+            if (bio != null) {
+                seclist.add(bio);
+            }
+        }
+        for (int i = 0; i < seclist.size(); i++) {
+            ConfigCategory biomes = seclist.get(i);
+            for (ConfigCategory child : biomes.getChildren()) {
+                if (child != null) {
+                    seclist.add(child);
+                }
+            }
+            if (biomes.isEmpty()) {
+                continue;
+            }
+            biomesect = biomes.getQualifiedName().replace('.', '/');
+            for (String k : biomes.keySet()) {
+                Property p = biomes.get(k);
+                if ((p != null) && p.isIntValue()) {
+                    int v = p.getInt();
+                    if ((v >= 1) && (v < 256)) {
+                        k = biomesect + '/' + k;
+                        if (k.startsWith("block/") || biomesect.startsWith("blocks/")) {
+                            k = k.substring(k.indexOf('/') + 1);
                         }
+                        else if (k.startsWith("item/")) {
+                            k = "item_" + k.substring(5);
+                        }
+                        k = k.replace(' ', '_');
+                        idm.biomemap.put(v, k);
                     }
                 }
             }

@@ -511,9 +511,12 @@ public class DynmapModScraper
                 line = line.trim();
                 if (line.startsWith("#")) continue;
                 String[] tok = line.split("=");
+                if (tok.length < 2) {
+                    tok = line.split(":");
+                }
                 if (tok.length == 2) {
                     try {
-                        int ival = Integer.parseInt(tok[1].trim());
+                        int ival = (int) Double.parseDouble(tok[1].trim());  // Some odd mods use floats for IDs (Minegicka)
                         String k = tok[0].trim().replace(' ', '_');
                         idm.map.put(ival, k);
                     } catch (NumberFormatException nfx) {

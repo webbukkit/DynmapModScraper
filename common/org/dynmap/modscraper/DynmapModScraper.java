@@ -351,7 +351,7 @@ public class DynmapModScraper
                     mm = new HashMap<String, Integer>();
                     uniqueItemMap.put(modid, mm);
                 }
-                mm.put(ui.name, i);
+                mm.put(ui.name, i - 256);
             }
         }
     }

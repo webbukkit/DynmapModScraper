@@ -239,9 +239,6 @@ public class DynmapModScraper
             }
             return s;
         }
-        public void setComment(String c) {
-            comment = c;
-        }
     }
     
     public static class ModelRecord {
@@ -350,7 +347,7 @@ public class DynmapModScraper
                     mm = new HashMap<String, Integer>();
                     uniqueItemMap.put(modid, mm);
                 }
-                mm.put(ui.name, i);
+                mm.put(ui.name, i - 256);
             }
         }
     }
@@ -719,7 +716,7 @@ public class DynmapModScraper
     private int getColorModifier(Block b, int meta) {
         int rc = 0xFFFFFF;
         try {
-            rc = b.func_149741_i(meta) & 0xFFFFFF;    // getRenderColor(meta) Chec render color multiplier
+            rc = b.getRenderColor(meta) & 0xFFFFFF;    // getRenderColor(meta) Chec render color multiplier
         } catch (Exception x) { // Some folks don't handle all meta properly
         }
         if (rc == 0xFFFFFF) {  // None
@@ -754,13 +751,15 @@ public class DynmapModScraper
         public int data[] = new int[3];    // 0=below, 1=at, 2=above
         public BiomeGenBase biome = BiomeGenBase.forest;
         
-        public Block func_147439_a(int x, int y, int z) {   // getBlock(x,y,z)
+        @Override
+        public Block getBlock(int x, int y, int z) {   // getBlock(x,y,z)
             if ((x != FIXEDX) || (z != FIXEDZ) || (y < (FIXEDY-1)) || (y > FIXEDY+1)) {
                 return Blocks.air;
             }
             return blk[y - FIXEDY + 1];
         }
-        public TileEntity func_147438_o(int x, int y, int z) { // getBlockTileEntity(x,y,z)
+        @Override
+        public TileEntity getTileEntity(int x, int y, int z) { // getBlockTileEntity(x,y,z)
             return null;
         }
         public int getLightBrightnessForSkyBlocks(int x, int y, int z, int l) {
@@ -772,7 +771,9 @@ public class DynmapModScraper
             }
             return data[y - FIXEDY + 1];
         }
-        public boolean func_147437_c(int x, int y, int z) { // isAitBlock(x,y,z)
+        
+        @Override
+        public boolean isAirBlock(int x, int y, int z) { // isAitBlock(x,y,z)
             if ((x != FIXEDX) || (z != FIXEDZ) || (y < (FIXEDY-1)) || (y > FIXEDY+1)) {
                 return true;
             }
@@ -799,7 +800,7 @@ public class DynmapModScraper
             if ((x != FIXEDX) || (z != FIXEDZ) || (y < (FIXEDY-1)) || (y > FIXEDY+1)) {
                 return false;
             }
-            Block block = func_147439_a(x, y, z);
+            Block block = getBlock(x, y, z);
             if(block == null) {
                 return false;
             }
@@ -808,67 +809,67 @@ public class DynmapModScraper
     }
     
     private boolean isOpaqueCube(Block b) {
-        return b.func_149662_c();
+        return b.isOpaqueCube();
     }
     private String getLocalizedName(Block b) {
-        return b.func_149732_F();
+        return b.getLocalizedName();
     }
     private double getBlockBoundsMinX(Block b) {
-        return b.func_149704_x();
+        return b.getBlockBoundsMinX();
     }
     private double getBlockBoundsMinY(Block b) {
-        return b.func_149665_z();
+        return b.getBlockBoundsMinY();
     }
     private double getBlockBoundsMinZ(Block b) {
-        return b.func_149706_B();
+        return b.getBlockBoundsMinZ();
     }
     private double getBlockBoundsMaxX(Block b) {
-        return b.func_149753_y();
+        return b.getBlockBoundsMaxX();
     }
     private double getBlockBoundsMaxY(Block b) {
-        return b.func_149669_A();
+        return b.getBlockBoundsMaxY();
     }
     private double getBlockBoundsMaxZ(Block b) {
-        return b.func_149693_C();
+        return b.getBlockBoundsMaxZ();
     }
     private int getRenderBlockPass(Block b) {
-        return b.func_149701_w();
+        return b.getRenderBlockPass();
     }
     private IIcon getIcon(Block b, IBlockAccess world, int x, int y, int z, int side) {
-        return b.func_149673_e(world, x, y, z, side);
+        return b.getIcon(world, x, y, z, side);
     }
     private IIcon getIcon(Block b, int side, int meta) {
-        return b.func_149691_a(side, meta);
+        return b.getIcon(side, meta);
     }
     private int getRenderColor(Block b, int meta) {
-        return b.func_149741_i(meta);
+        return b.getRenderColor(meta);
     }
     private boolean isPowered(BlockRailBase b) {
-        return b.func_150050_e();
+        return b.isPowered();
     }
     private BiomeGenBase[] getBiomeGenArray() {
-        return BiomeGenBase.func_150565_n();
+        return BiomeGenBase.getBiomeGenArray();
     }
     private int getBiomeGrassColor(BiomeGenBase b, int x, int y, int z) {
-        return b.func_150558_b(x, y, z);
+        return b.getBiomeGrassColor(x, y, z);
     }
     private int getBiomeFoliageColor(BiomeGenBase b, int x, int y, int z) {
-        return b.func_150571_c(x, y, z);
+        return b.getBiomeFoliageColor(x, y, z);
     }
     private boolean getGraphicsLevel(BlockLeaves b) {
-        return b.func_149662_c();
+        return !b.isOpaqueCube();
     }
     private void setGraphicsLevel(BlockLeaves b, boolean v) {
-        b.func_150122_b(v);
+        b.setGraphicsLevel(v);
     }
     private void setBlockBoundsBasedOnState(Block b, IBlockAccess world, int x, int y, int z) {
-        b.func_149719_a(world, x, y, z);
+        b.setBlockBoundsBasedOnState(world, x, y, z);
     }
     private Item getItemById(int id) {
-        return Item.func_150899_d(id);
+        return Item.getItemById(id);
     }
     private Block getBlockById(int id) {
-        return Block.func_149729_e(id);
+        return Block.getBlockById(id);
     }
 
     private static class ModuleCtx {
@@ -999,9 +1000,9 @@ public class DynmapModScraper
         ModuleCtx ctx = new ModuleCtx();
         // Process blocks
         for (int id = 0; id < 4096; id++) {
-            Block b = Block.func_149729_e(id);
+            Block b = Block.getBlockById(id);
             if (b == null) continue;
-            int rid = b.func_149645_b(); // getRenderType()
+            int rid = b.getRenderType(); // getRenderType()
             RendererType rt = RendererType.byID(rid);
             String rclass = getRendererByID(rid);
             // Check if mapping for render class
@@ -1013,7 +1014,7 @@ public class DynmapModScraper
             UniqueIdentifier ui = GameRegistry.findUniqueIdentifierFor(b);
             if ((ui != null) && (ui.modId != null) && (!ui.modId.equals("null"))) {
                 ctx.recmod = normalizeModID(ui.modId);
-                ctx.bname = ui.name;
+                ctx.bname = (ui.name != null)?ui.name:"null";
             }
             String blockline = "Block: id=" + id + ", class=" + b.getClass().getName() + ", renderer=" + rclass + "(" + rt + "), isOpaqueCube=" + isOpaqueCube(b) + ", name=" + getLocalizedName(b) + "(" + ctx.bname + ")\n";
 

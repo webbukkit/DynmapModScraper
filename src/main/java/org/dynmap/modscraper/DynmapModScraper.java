@@ -7,6 +7,7 @@ import cpw.mods.fml.common.Mod;
 import cpw.mods.fml.common.ModContainer;
 import cpw.mods.fml.common.Mod.EventHandler;
 import cpw.mods.fml.common.Mod.Instance;
+import cpw.mods.fml.common.ModMetadata;
 import cpw.mods.fml.common.SidedProxy;
 import cpw.mods.fml.common.event.FMLPreInitializationEvent;
 import cpw.mods.fml.common.event.FMLServerStartingEvent; 
@@ -74,6 +75,7 @@ public class DynmapModScraper
     
     private static HashMap<String, String> parentModIdByModId = new HashMap<String, String>();
     private static HashMap<String, String> modIdByLowerCase = new HashMap<String, String>();
+    private static HashMap<String, String> modIdByLowerCaseName = new HashMap<String, String>();
     private static HashMap<String, String> fullModIdByLowerCase = new HashMap<String, String>();
     private static HashMap<String, String> cfgfileByMod = new HashMap<String, String>();
     private static HashMap<String, String[]> sectionsByMod = new HashMap<String, String[]>();
@@ -401,9 +403,16 @@ public class DynmapModScraper
                 String origmod = mod;
                 String parent = origmod;
                 ModContainer mc = Loader.instance().getIndexedModList().get(mod);
-                while (!mc.getMetadata().parent.equals("")) {
-                    parent = mc.getMetadata().parent;
-                    mc = modmap.get(parent);
+                while (!(mc.getMetadata().parent.equals(""))) {
+                    String p = mc.getMetadata().parent;
+                    ModContainer m = modmap.get(p);
+                    if (m != null) {
+                        parent = p;
+                        mc = m;
+                    }
+                    else {
+                        break;
+                    }
                 }
                 String fullmod = mc.getModId();
                 parentModIdByModId.put(origmod, parent);
@@ -413,6 +422,7 @@ public class DynmapModScraper
                 donemods.add(mod);
                 
                 modIdByLowerCase.put(mod.toLowerCase(), mod); // Add lower case to allow case restore
+                modIdByLowerCaseName.put(mc.getName().toLowerCase(), mod);
                 fullModIdByLowerCase.put(mod.toLowerCase(), fullmod);   // Save full version (for modname:)
                 
                 String cfgfile = "config/" + mod + ".cfg";
@@ -886,13 +896,23 @@ public class DynmapModScraper
             else {
                 mod = normalizeModID(iconame.substring(0, idx));
                 txt = iconame.substring(idx+1);
-                if (ctx.recmod == null) ctx.recmod = modIdByLowerCase.get(mod.toLowerCase());
+                if (ctx.recmod == null) {
+                    ctx.recmod = modIdByLowerCase.get(mod.toLowerCase());
+                    if (ctx.recmod == null) {
+                        ctx.recmod = modIdByLowerCaseName.get(mod.toLowerCase());
+                    }
+                }
             }
         }
         else {
             mod = normalizeModID(split[0]);
             txt = split[1];
-            if (ctx.recmod == null) ctx.recmod = modIdByLowerCase.get(mod.toLowerCase());
+            if (ctx.recmod == null) {
+                ctx.recmod = modIdByLowerCase.get(mod.toLowerCase());
+                if (ctx.recmod == null) {
+                    ctx.recmod = modIdByLowerCaseName.get(mod.toLowerCase());
+                }
+            }
         }
         String id = mod + "/" + txt;
         textures.put(id, "assets/" + mod.toLowerCase() + "/textures/blocks/" + txt + ".png");
@@ -998,7 +1018,6 @@ public class DynmapModScraper
                 ctx.bname = ui.name;
             }
             String blockline = "Block: id=" + id + ", class=" + b.getClass().getName() + ", renderer=" + rclass + "(" + rt + "), isOpaqueCube=" + b.isOpaqueCube() + ", name=" + b.getLocalizedName() + "(" + ctx.bname + ")\n";
-
             for (int meta = 0; meta < 16; meta++) {
                 // Build fake block access context for this block
                 FakeBlockAccess fba = new FakeBlockAccess();

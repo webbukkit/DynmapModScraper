@@ -398,8 +398,15 @@ public class DynmapModScraper
                 String parent = origmod;
                 ModContainer mc = Loader.instance().getIndexedModList().get(mod);
                 while (!mc.getMetadata().parent.equals("")) {
-                    parent = mc.getMetadata().parent;
-                    mc = modmap.get(parent);
+                    String p = mc.getMetadata().parent;
+                    ModContainer m = modmap.get(p);
+                    if (m != null) {
+                        parent = p;
+                        mc = m;
+                    }
+                    else {
+                        break;
+                    }
                 }
                 String fullmod = mc.getModId();
                 parentModIdByModId.put(origmod, parent);

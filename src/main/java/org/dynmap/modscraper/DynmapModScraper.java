@@ -24,7 +24,6 @@ import net.minecraft.item.Item;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.IIcon;
 import net.minecraft.util.ReportedException;
-import net.minecraft.util.Vec3Pool;
 import net.minecraft.world.ColorizerFoliage;
 import net.minecraft.world.ColorizerGrass;
 import net.minecraft.world.IBlockAccess;
@@ -794,9 +793,6 @@ public class DynmapModScraper
         }
         public boolean extendedLevelsInChunkCache() {
             return true;
-        }
-        public Vec3Pool getWorldVec3Pool() {
-            return null;
         }
         public int isBlockProvidingPowerTo(int var1, int var2, int var3,
                 int var4) {

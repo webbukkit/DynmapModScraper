@@ -63,6 +63,6 @@ processResources
 }
 
 jar {
-   classifier = "forge-10.13.0"
+   classifier = "forge-1.7.10"
    destinationDir = project.projectDir
 }

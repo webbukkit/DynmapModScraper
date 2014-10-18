@@ -10,6 +10,7 @@ import cpw.mods.fml.common.Mod.Instance;
 import cpw.mods.fml.common.SidedProxy;
 import cpw.mods.fml.common.event.FMLPreInitializationEvent;
 import cpw.mods.fml.common.event.FMLServerStartingEvent; 
+import cpw.mods.fml.common.registry.GameData;
 import cpw.mods.fml.common.registry.GameRegistry;
 import cpw.mods.fml.common.registry.GameRegistry.UniqueIdentifier;
 import net.minecraft.block.Block;
@@ -321,15 +322,18 @@ public class DynmapModScraper
         for (int i = 0; i < 4096; i++) {
             Block b = getBlockById(i);
             if (b == null) continue;
-            UniqueIdentifier ui = GameRegistry.findUniqueIdentifierFor(b);
-            if (ui != null) {
-                String modid = normalizeModID(ui.modId);
-                Map<String, Integer> mm = uniqueBlockMap.get(modid);
-                if (mm == null) {
-                    mm = new HashMap<String, Integer>();
-                    uniqueBlockMap.put(modid, mm);
+            String blockname = GameData.getBlockRegistry().getNameForObject(b);
+            if (blockname != null) {
+                String[] p = blockname.split(":", 2);
+                if (p.length == 2) {
+                    String modid = normalizeModID(p[0]);
+                    Map<String, Integer> mm = uniqueBlockMap.get(modid);
+                    if (mm == null) {
+                        mm = new HashMap<String, Integer>();
+                        uniqueBlockMap.put(modid, mm);
+                    }
+                    mm.put(p[1], i);
                 }
-                mm.put(ui.name, i);
             }
         }
     }
@@ -1018,10 +1022,13 @@ public class DynmapModScraper
                 rt = mappedrt;
             }
             
-            UniqueIdentifier ui = GameRegistry.findUniqueIdentifierFor(b);
-            if ((ui != null) && (ui.modId != null) && (!ui.modId.equals("null"))) {
-                ctx.recmod = normalizeModID(ui.modId);
-                ctx.bname = (ui.name != null)?ui.name:"null";
+            String blockname = GameData.getBlockRegistry().getNameForObject(b);
+            if (blockname != null) {
+                String[] p = blockname.split(":", 2);
+                if (p.length == 2) {
+                    ctx.recmod = normalizeModID(p[0]);
+                    ctx.bname = p[1];
+                }
             }
             String blockline = "Block: id=" + id + ", class=" + b.getClass().getName() + ", renderer=" + rclass + "(" + rt + "), isOpaqueCube=" + isOpaqueCube(b) + ", name=" + getLocalizedName(b) + "(" + ctx.bname + ")\n";
 
